@@ -94,6 +94,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
  */function n(e){return e>=65&&e<=90||95===e||e>=97&&e<=122||e>=192&&e<=214||e>=216&&e<=246||e>=248&&e<=767||e>=880&&e<=893||e>=895&&e<=8191||e>=8204&&e<=8205||e>=8304&&e<=8591||e>=11264&&e<=12271||e>=12289&&e<=55295||e>=63744&&e<=64975||e>=65008&&e<=65533||e>=65536&&e<=983039}Object.defineProperty(r,"__esModule",{value:!0}),r.NC_NAME_START_CHAR="A-Z_a-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff\u0370-\u037d\u037f-\u1fff\u200c-\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd\ud800\udc00-\udb7f\udfff",r.NC_NAME_CHAR="-"+r.NC_NAME_START_CHAR+".0-9\xb7\u0300-\u036f\u203f-\u2040",r.NC_NAME_START_CHAR_RE=new RegExp("^["+r.NC_NAME_START_CHAR+"]$","u"),r.NC_NAME_CHAR_RE=new RegExp("^["+r.NC_NAME_CHAR+"]$","u"),r.NC_NAME_RE=new RegExp("^["+r.NC_NAME_START_CHAR+"]["+r.NC_NAME_CHAR+"]*$","u"),r.isNCNameStartChar=n,r.isNCNameChar=function(e){return n(e)||45===e||46===e||e>=48&&e<=57||183===e||e>=768&&e<=879||e>=8255&&e<=8256}},{}]},{},[15])(15)}));
 //# sourceMappingURL=exceljs.min.js.map
 </script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --accent:#2F5496; --accent-light:#4472C4; --green:#548235; --bg:#f4f6f9; --card:#ffffff;
@@ -296,6 +298,7 @@ window.addEventListener("unhandledrejection", function(e){
 });
 if (typeof XLSX === "undefined") showFatalError("библиотека XLSX не загрузилась");
 if (typeof Chart === "undefined") showFatalError("библиотека Chart не загрузилась");
+if (typeof firebase === "undefined") showFatalError("библиотека Firebase не загрузилась — проверьте интернет-соединение");
 
 const POINTS = ["ЖГ","КС","АЦ","ШР","ХБК","ВОКЗ/ЖД","ХРОМ","ОРАЛ"];
 const CAT_ORDER = ["5D","6D","18D","Приват","Приват по 270","Стекло по 1500/1490","Матовое стекло","Другое стекло"];
@@ -457,96 +460,101 @@ function detectMonthFromFilename(filename){
   return null;
 }
 
-/* ============ ЛОКАЛЬНОЕ ХРАНИЛИЩЕ (без сервера, localStorage в этом браузере) ============ */
-// localStorage выбран вместо IndexedDB: под file:// (когда файл открыт двойным
-// кликом, без сервера) IndexedDB в некоторых браузерах (особенно Chrome) ведёт
-// себя ненадёжно — данные могут не сохраняться между вкладками/перезапусками.
-// localStorage работает стабильно в любом браузере даже с локального файла.
-const LS_KEY = "topglass_data_v1";
-
-function lsLoad(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { index: [], months: {} };
-    const parsed = JSON.parse(raw);
-    if (!parsed.index) parsed.index = [];
-    if (!parsed.months) parsed.months = {};
-    return parsed;
-  }catch(e){
-    throw new Error("Не удалось прочитать локальное хранилище: " + e.message);
-  }
+/* ============ ОБЛАЧНОЕ ХРАНИЛИЩЕ (Firebase Firestore, общее для всех) ============ */
+// Данные теперь общие для всех точек и компьютеров — хранятся в облаке (Firestore),
+// а не в браузере. Нужен интернет для загрузки и просмотра. Каждая точка+месяц —
+// отдельный документ в коллекции "points", поэтому разные точки могут загружать
+// данные одновременно без конфликтов.
+const firebaseConfig = {
+  apiKey: "AIzaSyD55QkhR7RvKH_I6FBLK_NZL9e9Jafj-qE",
+  authDomain: "topglass-report.firebaseapp.com",
+  projectId: "topglass-report",
+  storageBucket: "topglass-report.firebasestorage.app",
+  messagingSenderId: "429334255886",
+  appId: "1:429334255886:web:dbaaf7a285807016ca5f5f",
+};
+let db = null;
+try{
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+}catch(e){
+  showFatalError("Не удалось подключиться к облачному хранилищу: " + e.message);
 }
-function lsSave(store){
-  try{
-    localStorage.setItem(LS_KEY, JSON.stringify(store));
-  }catch(e){
-    if (e && (e.name === "QuotaExceededError" || /quota/i.test(e.message||""))){
-      throw new Error("Не хватает места в хранилище браузера. Скачайте резервную копию, затем удалите старые месяцы.");
-    }
-    throw new Error("Не удалось сохранить в локальное хранилище: " + (e && e.message));
-  }
+
+function pointDocId(monthKey, point){
+  return monthKey + "__" + point.replace(/\//g, "-");
 }
 
 async function localListMonths(){
-  const store = lsLoad();
-  return store.index.slice().sort((a,b)=> a.monthKey < b.monthKey ? -1 : 1);
+  const snap = await db.collection("points").get();
+  const byMonth = {};
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!byMonth[d.monthKey]){
+      byMonth[d.monthKey] = { monthKey: d.monthKey, monthLabel: d.monthLabel, updatedAt: d.updatedAt, points: [] };
+    }
+    byMonth[d.monthKey].points.push(d.point);
+    if (!byMonth[d.monthKey].updatedAt || d.updatedAt > byMonth[d.monthKey].updatedAt){
+      byMonth[d.monthKey].updatedAt = d.updatedAt;
+    }
+  });
+  return Object.values(byMonth).sort((a,b)=> a.monthKey < b.monthKey ? -1 : 1);
 }
+
 async function localGetMonth(month){
-  const store = lsLoad();
-  return store.months[month] || { monthKey: month, monthLabel: month, points: {} };
+  const snap = await db.collection("points").where("monthKey","==",month).get();
+  const rec = { monthKey: month, monthLabel: month, points: {} };
+  snap.forEach(doc => {
+    const d = doc.data();
+    rec.monthLabel = d.monthLabel || rec.monthLabel;
+    rec.points[d.point] = d.items;
+  });
+  return rec;
 }
+
 async function localSavePoint(month, monthLabel, point, items){
-  const store = lsLoad();
-  const rec = store.months[month] || { monthKey: month, monthLabel, points: {} };
-  rec.monthLabel = monthLabel || rec.monthLabel || month;
-  rec.points[point] = items;
-  rec.updatedAt = new Date().toISOString();
-  store.months[month] = rec;
-  let entry = store.index.find(m => m.monthKey === month);
-  const pointsList = Object.keys(rec.points);
-  if (!entry){
-    entry = { monthKey: month, monthLabel: rec.monthLabel, updatedAt: rec.updatedAt, points: pointsList };
-    store.index.push(entry);
-  } else {
-    entry.monthLabel = rec.monthLabel;
-    entry.updatedAt = rec.updatedAt;
-    entry.points = pointsList;
-  }
-  lsSave(store);
+  await db.collection("points").doc(pointDocId(month, point)).set({
+    monthKey: month, monthLabel, point, items, updatedAt: new Date().toISOString(),
+  });
 }
+
 async function localDeletePoint(month, point){
-  const store = lsLoad();
-  const rec = store.months[month];
-  if (!rec) return;
-  delete rec.points[point];
-  if (Object.keys(rec.points).length === 0){
-    delete store.months[month];
-    store.index = store.index.filter(m => m.monthKey !== month);
-  } else {
-    rec.updatedAt = new Date().toISOString();
-    store.months[month] = rec;
-    const entry = store.index.find(m => m.monthKey === month);
-    if (entry){ entry.points = Object.keys(rec.points); entry.updatedAt = rec.updatedAt; }
-  }
-  lsSave(store);
+  await db.collection("points").doc(pointDocId(month, point)).delete();
 }
+
 async function localBackup(){
-  const store = lsLoad();
-  return { index: store.index, months: store.months, exportedAt: new Date().toISOString() };
-}
-async function localRestoreBackup(data){
-  const store = lsLoad();
-  for (const [monthKey, rec] of Object.entries(data.months || {})){
-    store.months[monthKey] = rec;
-  }
-  const incoming = data.index || Object.values(data.months||{}).map(r=>({
-    monthKey: r.monthKey, monthLabel: r.monthLabel, updatedAt: r.updatedAt, points: Object.keys(r.points||{})
+  const snap = await db.collection("points").get();
+  const months = {};
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!months[d.monthKey]) months[d.monthKey] = { monthKey: d.monthKey, monthLabel: d.monthLabel, points: {} };
+    months[d.monthKey].monthLabel = d.monthLabel;
+    months[d.monthKey].points[d.point] = d.items;
+  });
+  const index = Object.values(months).map(m => ({
+    monthKey: m.monthKey, monthLabel: m.monthLabel, points: Object.keys(m.points),
   }));
-  const byKey = {};
-  store.index.forEach(e => byKey[e.monthKey] = e);
-  incoming.forEach(e => byKey[e.monthKey] = e);
-  store.index = Object.values(byKey).sort((a,b)=> a.monthKey < b.monthKey ? -1 : 1);
-  lsSave(store);
+  return { index, months, exportedAt: new Date().toISOString() };
+}
+
+async function localRestoreBackup(data){
+  const months = data.months || {};
+  const batch = db.batch();
+  let count = 0;
+  for (const [monthKey, rec] of Object.entries(months)){
+    for (const [point, items] of Object.entries(rec.points || {})){
+      batch.set(db.collection("points").doc(pointDocId(monthKey, point)), {
+        monthKey, monthLabel: rec.monthLabel || monthKey, point, items, updatedAt: new Date().toISOString(),
+      });
+      count++;
+      if (count >= 450){
+        // ограничение Firestore — не больше 500 операций в одной пачке
+        await batch.commit();
+        count = 0;
+      }
+    }
+  }
+  if (count > 0) await batch.commit();
 }
 
 /* ============ АГРЕГАЦИЯ ============ */

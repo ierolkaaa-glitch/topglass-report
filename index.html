@@ -103,7 +103,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   *{box-sizing:border-box;}
   body{margin:0; font-family: Arial, "Segoe UI", sans-serif; background:var(--bg); color:var(--text);}
-  #app{display:block;}
+  #app{display:none;}
+  #password-gate{position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:2000;}
+  #password-gate .gate-box{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:32px 28px; width:280px; box-shadow:0 8px 30px rgba(0,0,0,.08); text-align:center;}
+  #password-gate h2{margin:0 0 16px; font-size:16px; color:var(--text);}
+  #password-gate input{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:6px; font-size:14px; margin-bottom:10px; box-sizing:border-box;}
+  #password-gate button{width:100%; padding:10px; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:14px; cursor:pointer;}
+  #password-gate button:hover{background:var(--accent-light);}
+  #password-gate .gate-error{color:#c0392b; font-size:12px; min-height:16px; margin-bottom:6px;}
   header.topbar{background:var(--accent); color:#fff; padding:14px 24px; display:flex; align-items:center; justify-content:space-between;}
   header.topbar h1{font-size:18px; margin:0;}
   nav.tabs{display:flex; gap:4px; background:#fff; padding:0 20px; border-bottom:1px solid var(--border); overflow-x:auto;}
@@ -158,6 +165,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </head>
 <body>
 
+<div id="password-gate">
+  <div class="gate-box">
+    <h2>TopGlass — вход</h2>
+    <div class="gate-error" id="gate-error"></div>
+    <input type="password" id="gate-password" placeholder="Пароль" autocomplete="off" />
+    <button id="gate-submit">Войти</button>
+  </div>
+</div>
+
 <div id="app">
   <header class="topbar">
     <h1>TopGlass — отчёт по продажам</h1>
@@ -166,7 +182,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button data-tab="upload" class="active">Загрузить данные</button>
     <button data-tab="report">Отчёт за месяц</button>
     <button data-tab="insights">Сравнение точек и инсайты</button>
-    <button data-tab="dynamics">Динамика по месяцам</button>
     <button data-tab="backup">Резервная копия</button>
   </nav>
   <main>
@@ -224,7 +239,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <div class="chart-wrap" style="height:340px;"><canvas id="chart-cat-compare"></canvas></div>
       </div>
       <div class="card">
+        <h2>Группа А: ШР, АЦ, КС, ЖГ (между собой)</h2>
+        <div class="chart-wrap" style="height:340px;"><canvas id="chart-group-a"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Группа Б: ХБК, ВОКЗ/ЖД, ОРАЛ, ХРОМ (между собой)</h2>
+        <div class="chart-wrap" style="height:340px;"><canvas id="chart-group-b"></canvas></div>
+      </div>
+      <div class="card">
         <h2>Инсайты: где продаётся заметно больше/меньше</h2>
+        <p class="muted" style="margin-top:-6px;">Точки сравниваются только внутри своей группы (Группа А между собой, Группа Б между собой).</p>
         <div class="slider-row">
           <label style="width:230px;">Мин. разница в разах: <b id="ratio-val">1.5</b>×</label>
           <input type="range" id="ratio-slider" min="1.1" max="5" step="0.1" value="1.5">
@@ -233,23 +257,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           <label style="width:230px;">Мин. разница в штуках: <b id="diff-val">5</b> шт</label>
           <input type="range" id="diff-slider" min="1" max="50" step="1" value="5">
         </div>
-        <div id="insights-list" style="margin-top:14px;"></div>
-      </div>
-    </section>
-
-    <!-- DYNAMICS TAB -->
-    <section class="tab-panel" id="tab-dynamics">
-      <div class="card">
-        <h2>Прибыль сети по месяцам</h2>
-        <div class="chart-wrap"><canvas id="chart-network-trend"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="row">
-          <label>Категория:</label>
-          <select id="dynamics-cat-select"></select>
-        </div>
-        <h2 style="margin-top:14px;">Прибыль по точкам во времени</h2>
-        <div class="chart-wrap"><canvas id="chart-cat-trend"></canvas></div>
+        <h3>Группа А: ШР, АЦ, КС, ЖГ</h3>
+        <div id="insights-list-a" style="margin-top:6px;"></div>
+        <h3>Группа Б: ХБК, ВОКЗ/ЖД, ОРАЛ, ХРОМ</h3>
+        <div id="insights-list-b" style="margin-top:6px;"></div>
       </div>
     </section>
 
@@ -589,7 +600,6 @@ document.querySelectorAll("nav.tabs button").forEach(btn=>{
     document.getElementById("tab-"+btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "report") loadReportTab();
     if (btn.dataset.tab === "insights") loadInsightsTab();
-    if (btn.dataset.tab === "dynamics") loadDynamicsTab();
   });
 });
 
@@ -962,6 +972,8 @@ async function loadInsightsTab(){
   const rec = await localGetMonth(month);
   currentInsightsData = rec;
   renderCatCompareChart(rec);
+  renderGroupChart(rec, POINT_GROUPS["Группа А"], "chart-group-a", "groupAChart");
+  renderGroupChart(rec, POINT_GROUPS["Группа Б"], "chart-group-b", "groupBChart");
   renderInsightsList();
 }
 
@@ -979,13 +991,39 @@ function renderCatCompareChart(rec){
   });
 }
 
-function renderInsightsList(){
-  if (!currentInsightsData) return;
-  const rec = currentInsightsData;
-  const pointsWithData = POINTS.filter(p=>rec.points[p]);
-  const ratioThresh = parseFloat(document.getElementById("ratio-slider").value);
-  const diffThresh = parseFloat(document.getElementById("diff-slider").value);
+// Группа А и Группа Б — фиксированные объединения точек. Точки внутри каждой группы
+// сравниваются между собой (а не группа с группой).
+const POINT_GROUPS = {
+  "Группа А": ["ШР","АЦ","КС","ЖГ"],
+  "Группа Б": ["ХБК","ВОКЗ/ЖД","ОРАЛ","ХРОМ"],
+};
+let groupAChart = null;
+let groupBChart = null;
+function renderGroupChart(rec, groupPoints, canvasId, chartVarName){
+  const pointsWithData = groupPoints.filter(p=>rec.points[p]);
+  const datasets = pointsWithData.map((p,i)=>{
+    const agg = aggregateByCategory(rec.points[p].filter(it=>CAT_ORDER.includes(it.cat)));
+    return { label:p, data: CAT_ORDER.map(c=>agg[c]?agg[c].profit:0), backgroundColor: POINT_COLORS[i%POINT_COLORS.length] };
+  });
+  if (chartVarName === "groupAChart"){
+    if (groupAChart) groupAChart.destroy();
+    groupAChart = new Chart(document.getElementById(canvasId), {
+      type:"bar",
+      data:{ labels: CAT_ORDER, datasets },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
+    });
+  } else {
+    if (groupBChart) groupBChart.destroy();
+    groupBChart = new Chart(document.getElementById(canvasId), {
+      type:"bar",
+      data:{ labels: CAT_ORDER, datasets },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
+    });
+  }
+}
 
+function computeGroupInsights(rec, groupPoints, ratioThresh, diffThresh){
+  const pointsWithData = groupPoints.filter(p=>rec.points[p]);
   const byName = {};
   for (const p of pointsWithData){
     for (const it of rec.points[p]){
@@ -994,7 +1032,6 @@ function renderInsightsList(){
       byName[it.name][p] = (byName[it.name][p]||0) + it.qty;
     }
   }
-
   const insights = [];
   for (const [name, vals] of Object.entries(byName)){
     const full = {}; pointsWithData.forEach(p=>full[p]=vals[p]||0);
@@ -1010,9 +1047,11 @@ function renderInsightsList(){
     }
   }
   insights.sort((a,b)=>b.diff-a.diff);
-  const top = insights.slice(0,25);
+  return insights.slice(0,25);
+}
 
-  const list = document.getElementById("insights-list");
+function renderInsightsGroupList(containerId, top){
+  const list = document.getElementById(containerId);
   if (top.length===0){ list.innerHTML = `<p class="muted">Заметных расхождений при текущих порогах не найдено.</p>`; return; }
   list.innerHTML = top.map(ins=>{
     const ratioTxt = ins.ratio===Infinity ? `только в ${ins.maxP[0]}` : `в ${ins.ratio.toFixed(1)}× больше`;
@@ -1020,67 +1059,16 @@ function renderInsightsList(){
   }).join("");
 }
 
-/* ============ ДИНАМИКА ПО МЕСЯЦАМ ============ */
-let networkTrendChart=null, catTrendChart=null;
-document.getElementById("dynamics-cat-select").addEventListener("change", renderCatTrendChart);
+function renderInsightsList(){
+  if (!currentInsightsData) return;
+  const rec = currentInsightsData;
+  const ratioThresh = parseFloat(document.getElementById("ratio-slider").value);
+  const diffThresh = parseFloat(document.getElementById("diff-slider").value);
 
-let monthlyRecordsCache = {};
-
-async function loadDynamicsTab(){
-  await refreshMonthsEverywhereIfEmpty();
-  if (monthsCache.length===0){
-    document.getElementById("tab-dynamics").innerHTML = `<p class="muted">Нет загруженных месяцев.</p>`;
-    return;
-  }
-  const catSel = document.getElementById("dynamics-cat-select");
-  if (catSel.options.length===0){
-    catSel.innerHTML = CAT_ORDER.map(c=>`<option value="${c}">${c}</option>`).join("") + `<option value="ТОВАРЫ">ТОВАРЫ</option>`;
-  }
-  for (const m of monthsCache){
-    if (!monthlyRecordsCache[m.monthKey]){
-      monthlyRecordsCache[m.monthKey] = await localGetMonth(m.monthKey);
-    }
-  }
-  renderNetworkTrendChart();
-  renderCatTrendChart();
-}
-
-function renderNetworkTrendChart(){
-  const sortedMonths = monthsCache.slice().sort((a,b)=>a.monthKey<b.monthKey?-1:1);
-  const data = sortedMonths.map(m=>{
-    const rec = monthlyRecordsCache[m.monthKey];
-    let total = 0;
-    for (const p of POINTS){ if (rec.points[p]) total += rec.points[p].reduce((s,it)=>s+it.profit,0); }
-    return total;
-  });
-  if (networkTrendChart) networkTrendChart.destroy();
-  networkTrendChart = new Chart(document.getElementById("chart-network-trend"), {
-    type:"line",
-    data:{ labels: sortedMonths.map(m=>m.monthLabel), datasets:[{label:"Прибыль сети, ₸", data, borderColor:"#4472C4", backgroundColor:"#4472C4", tension:.2}] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} }
-  });
-}
-
-function renderCatTrendChart(){
-  const cat = document.getElementById("dynamics-cat-select").value;
-  const sortedMonths = monthsCache.slice().sort((a,b)=>a.monthKey<b.monthKey?-1:1);
-  const datasets = POINTS.map((p,i)=>({
-    label:p,
-    data: sortedMonths.map(m=>{
-      const rec = monthlyRecordsCache[m.monthKey];
-      if (!rec.points[p]) return null;
-      return rec.points[p].filter(it=>it.cat===cat).reduce((s,it)=>s+it.profit,0);
-    }),
-    borderColor: POINT_COLORS[i%POINT_COLORS.length],
-    backgroundColor: POINT_COLORS[i%POINT_COLORS.length],
-    tension:.2
-  }));
-  if (catTrendChart) catTrendChart.destroy();
-  catTrendChart = new Chart(document.getElementById("chart-cat-trend"), {
-    type:"line",
-    data:{ labels: sortedMonths.map(m=>m.monthLabel), datasets },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}} }
-  });
+  const topA = computeGroupInsights(rec, POINT_GROUPS["Группа А"], ratioThresh, diffThresh);
+  const topB = computeGroupInsights(rec, POINT_GROUPS["Группа Б"], ratioThresh, diffThresh);
+  renderInsightsGroupList("insights-list-a", topA);
+  renderInsightsGroupList("insights-list-b", topB);
 }
 
 /* ============ РЕЗЕРВНАЯ КОПИЯ ============ */
@@ -1110,8 +1098,34 @@ document.getElementById("backup-restore-input").addEventListener("change", async
   e.target.value = "";
 });
 
+/* ============ ПАРОЛЬ ДОСТУПА ============ */
+const SITE_PASSWORD = "topglass2026";
+function unlockApp(){
+  document.getElementById("password-gate").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  initApp();
+}
+function tryGateSubmit(){
+  const val = document.getElementById("gate-password").value;
+  if (val === SITE_PASSWORD){
+    localStorage.setItem("tg_authed", "1");
+    unlockApp();
+  } else {
+    document.getElementById("gate-error").textContent = "Неверный пароль";
+  }
+}
+document.getElementById("gate-submit").addEventListener("click", tryGateSubmit);
+document.getElementById("gate-password").addEventListener("keydown", function(e){
+  if (e.key === "Enter") tryGateSubmit();
+});
+
 /* ============ СТАРТ ПРИЛОЖЕНИЯ ============ */
-initApp();
+if (localStorage.getItem("tg_authed") === "1"){
+  unlockApp();
+} else {
+  document.getElementById("password-gate").style.display = "flex";
+  document.getElementById("gate-password").focus();
+}
 </script>
 </body>
 </html>

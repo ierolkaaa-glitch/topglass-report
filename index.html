@@ -150,6 +150,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
   @media(max-width:900px){.grid2{grid-template-columns:1fr;}}
   .chart-wrap{position:relative; height:260px;}
+  .pie-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:16px;}
+  .pie-item{display:flex; flex-direction:column; align-items:stretch;}
+  .pie-item h4{font-size:12px; text-align:center; margin:0 0 6px; color:var(--text);}
+  .pie-item-wrap{position:relative; height:200px;}
+  .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px;}
+  .modal-box{background:var(--card); border-radius:10px; padding:20px 22px; width:100%; max-width:800px; max-height:90vh; overflow:auto; box-shadow:0 4px 24px rgba(0,0,0,.25);}
+  .modal-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
   .point-section{border-top:3px solid var(--accent); margin-top:22px; padding-top:14px;}
   .point-section h3.point-title{font-size:16px; color:var(--accent); margin:0 0 12px;}
   .goods-section{border-top:3px solid var(--green);}
@@ -161,6 +168,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .slider-row input[type=range]{flex:1;}
   .toast{position:fixed; bottom:20px; right:20px; background:#1f2937; color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; opacity:0; transition:.2s; pointer-events:none; z-index:999;}
   .toast.show{opacity:1;}
+  .btn-link{background:none; border:none; color:var(--accent); font-size:12px; cursor:pointer; padding:6px 0; text-decoration:underline;}
+  .btn-link:hover{color:var(--accent-light);}
+  .detail-panel{margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);}
+  .detail-panel h4{font-size:12px; margin:0 0 6px; color:var(--muted);}
+  .dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px;}
 </style>
 </head>
 <body>
@@ -235,10 +247,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         </div>
       </div>
       <div class="card">
-        <h2>Категории стекла по точкам</h2>
-        <div class="chart-wrap" style="height:340px;"><canvas id="chart-cat-compare"></canvas></div>
-      </div>
-      <div class="card">
         <h2>Соотношение стёкол и чехлов</h2>
         <p class="muted" id="glass-case-summary" style="margin-top:-6px;"></p>
         <div class="grid2">
@@ -247,12 +255,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         </div>
       </div>
       <div class="card">
-        <h2>Группа А: ШР, АЦ, КС, ЖГ (между собой)</h2>
-        <div class="chart-wrap" style="height:340px;"><canvas id="chart-group-a"></canvas></div>
-      </div>
-      <div class="card">
-        <h2>Группа Б: ХБК, ВОКЗ/ЖД, ОРАЛ, ХРОМ (между собой)</h2>
-        <div class="chart-wrap" style="height:340px;"><canvas id="chart-group-b"></canvas></div>
+        <h2>Стёкла и товары по точкам</h2>
+        <p class="muted" style="margin-top:-6px;">Нажмите на диаграмму, чтобы посмотреть разбивку по подвидам.</p>
+        <div class="grid2">
+          <div>
+            <h3>Стёкла (шт)</h3>
+            <div class="chart-wrap" style="height:300px; cursor:pointer;"><canvas id="chart-glass-by-point"></canvas></div>
+          </div>
+          <div>
+            <h3>Товары (шт)</h3>
+            <div class="chart-wrap" style="height:300px; cursor:pointer;"><canvas id="chart-goods-by-point"></canvas></div>
+          </div>
+        </div>
       </div>
       <div class="card">
         <h2>Инсайты: где продаётся заметно больше/меньше</h2>
@@ -262,15 +276,39 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           <input type="range" id="ratio-slider" min="1.1" max="5" step="0.1" value="1.5">
         </div>
         <div class="slider-row">
-          <label style="width:230px;">Мин. разница в штуках: <b id="diff-val">5</b> шт</label>
-          <input type="range" id="diff-slider" min="1" max="50" step="1" value="5">
+          <label style="width:230px;">Мин. разница в штуках: <b id="diff-val">30</b> шт</label>
+          <input type="range" id="diff-slider" min="20" max="150" step="1" value="30">
         </div>
         <h3>Группа А: ШР, АЦ, КС, ЖГ</h3>
         <div id="insights-list-a" style="margin-top:6px;"></div>
         <h3>Группа Б: ХБК, ВОКЗ/ЖД, ОРАЛ, ХРОМ</h3>
         <div id="insights-list-b" style="margin-top:6px;"></div>
+        <div class="slider-row" style="margin-top:14px;">
+          <label style="width:230px;">Фильтр по категории:</label>
+          <select id="insights-cat-filter">
+            <option value="">Все категории</option>
+            <option value="Стекло">Стекло</option>
+            <option value="Гидрогель">Гидрогель</option>
+            <option value="Наушники">Наушники</option>
+            <option value="Зарядки">Зарядки</option>
+            <option value="USB">USB</option>
+            <option value="Адаптеры">Адаптеры</option>
+            <option value="Другие">Другие</option>
+          </select>
+        </div>
       </div>
     </section>
+
+    <!-- DRILL-DOWN MODAL (разбивка по подвидам стёкол/товаров) -->
+    <div id="drill-modal-overlay" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 id="drill-modal-title" style="margin:0;">Подробнее</h2>
+          <button class="btn" id="drill-modal-close">Закрыть</button>
+        </div>
+        <div class="pie-grid" id="drill-modal-piegrid"></div>
+      </div>
+    </div>
 
     <!-- BACKUP TAB -->
     <section class="tab-panel" id="tab-backup">
@@ -345,6 +383,21 @@ const REPORT_CAT_ORDER = ["5D","6D","18D","Приват","Приват по 270"
 // точкам, Группа А, Группа Б) — редкие "Матовое стекло" и "Другое стекло" здесь не нужны,
 // но на "Соотношение стёкол и чехлов" (GLASS_RATIO_CATS, считается от CAT_ORDER) это не влияет.
 const INSIGHTS_CAT_ORDER = CAT_ORDER.filter(c=>c!=="Матовое стекло" && c!=="Другое стекло");
+// Подкатегории стекла, из которых складывается объединённый столбец "Стекло" в отчёте за
+// месяц — сами по себе не показываются отдельными столбцами, но видны как цветные сегменты
+// внутри столбца "Стекло" (и в развороте "Подробнее").
+const GLASS_SUBCATS = REPORT_CAT_ORDER.filter(c=>c!=="ЧЕХЛЫ" && c!=="ТОВАРЫ");
+// Классические, чётко различимые цвета — у каждой подкатегории свой цвет (синий, красный,
+// жёлтый, зелёный и т.д.), а не оттенки одного тона, чтобы график читался с одного взгляда.
+const GLASS_SUBCAT_COLORS = {
+  "5D":"#2E75B6", "6D":"#C00000", "18D":"#FFC000", "Приват":"#548235",
+  "Приват по 270":"#7030A0", "Стекло по 1500/1490":"#ED7D31", "Гидрогель":"#17A398"
+};
+const CASE_COLOR = "#8B4513";
+const GOODS_COLOR = "#264478";
+// Подкатегории "Товаров" (всё, что не стекло и не чехлы) — только для отчёта за месяц.
+const GOODS_SUBCATS = ["Наушники","Зарядки","USB","Другие"];
+const GOODS_SUBCAT_COLORS = { "Наушники":"#FF66CC", "Зарядки":"#264478", "USB":"#00B0F0", "Другие":"#A6A6A6" };
 const RU_MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const POINT_COLORS = ["#4472C4","#ED7D31","#A5A5A5","#FFC000","#5B9BD5","#70AD47","#264478","#9E480E"];
 
@@ -386,6 +439,22 @@ function classify(name){
   if (n.includes("линза")) return "Линза на камеры";
   if (n.includes("чехол") || n.includes("чехл")) return "ЧЕХЛЫ";
   return "ТОВАРЫ";
+}
+
+// Справочник "Название товара -> подкатегория" для товаров (не стекло, не чехлы), собранный
+// из категорий "Наушники"/"Беспроводные наушники", "Зарядные устройства", "USB" в файле
+// Наименование-Категория.xlsx. Не найденные по справочнику товары определяются по ключевым
+// словам в названии, а если и это не помогло — попадают в "Другие".
+const GOODS_SUBCAT_MAP = {"aipods по 3900":"Наушники","usb по 300":"USB","usb cable orig":"USB","usb type-c to type-c 1190":"USB","usb-c to lighting 2890":"USB","usb type-c foneng x115":"USB","usb-c to lightning по 1190":"USB","зарядное устройство xa-46":"Зарядки","usb t291 c/c":"USB","зу foneng eu46":"Зарядки","usb type-c to type-c 2890":"USB","зу foneng eu72":"Зарядки","usb ts-141 c/c":"USB","usb по 400":"USB","зу ch0111 c/c":"Зарядки","зу foneng eu39":"Зарядки","зу ch0341 c/c":"Зарядки","наушники по 300":"Наушники","usb type-c to type-c 6600":"USB","usb type-c to type-c 890":"USB","наушники lighting foneng t28":"Наушники","зу ch6031 c/c":"Зарядки","зу ch5211 c/c":"Зарядки","наушники 1790":"Наушники","usb-c to lighting 890":"USB","наушники type-c foneng t36":"Наушники","usb ts-033 a/c":"USB","foneng usb type-c to type-c x115":"USB","наушники borofone bm73":"Наушники","usb type-c foneng x119":"USB","airpods 3-9490":"Наушники","airpods pro 2-9490":"Наушники","airpods 4-9490":"Наушники","usb x213 iphone":"USB","usb mletube micro/type/lihgtning":"USB","usb wuw 213 micro":"USB","airpods pro 2-6890":"Наушники","amaya e57s":"Зарядки","airpods 3-6890":"Наушники","зарядное устройство ga-39 type-c/lightning":"Зарядки","usb type-c &ip":"USB","usb samsung type-c to type-c":"USB","зу ch102 a/l":"Зарядки","airpods 4-6890":"Наушники","зу wuw t82 type-c":"Зарядки","usb wuw x195":"USB","usb type-c to type-c foneng x121 orange":"USB","usb wuw x192 lighting":"USB","наушники p9":"Наушники","usb xp-53":"USB","usb c68 iphone":"USB","usb type-c to type-c foneng x121 white":"USB","зу wuw t82 micro":"Зарядки","зу wuw t55 micro":"Зарядки","зу wuw t55 lighting":"Зарядки","зу wuw t55 type-c":"Зарядки","зу ch6031 c/l":"Зарядки","наушники dg по 1000":"Наушники","usb 2в1":"USB","зу u010 iphone":"Зарядки","usb c33 iphone":"USB","зарядное устройство gerlax ga-26":"Зарядки","usb d58t":"USB","зу u016 type-c":"Зарядки","зу u015 type-c":"Зарядки","usb otg":"USB","airpods pro по 6900":"Наушники","usb hoco u133":"USB","usb ts-033 a/l":"USB","usb x21":"USB","наушники led ms-b4":"Наушники","usb d07l":"USB","usb по 500":"USB","samsung адаптер 45w":"Зарядки","usb магнит micro ip,type c m3":"USB","usb d07v":"USB","зу u010 type-c":"Зарядки","usb hoco x90":"USB","usb wuw x192 micro/type":"USB","зу type-c amaya e59s":"Зарядки","usb d42l":"USB","u016 iphone":"Зарядки","зарядка по 600":"Зарядки","зу u014 type-c":"Зарядки","usb магнитный mx-cb37":"USB","наушники wuw r162":"Наушники","наушники на шею p100":"Наушники","беспроводная зарядка 15w borofone":"Зарядки","airpods 3 lux по 6900":"Наушники","наушники y08":"Наушники","зу m19":"Зарядки","usb d02v vdenmev":"USB","зу wuw c269 type-c":"Зарядки","наушники bm71 type-c":"Наушники","наушники borofone bm77":"Наушники","наушники type-c expert":"Наушники","зарядка c70a":"Зарядки","u014 usb type-c":"Зарядки","зу c268 type-c":"Зарядки","наушники ge-03":"Наушники","з,у -35w 15 pro max":"Зарядки","детские наушники":"Наушники","usb для iph":"USB","наушники g5":"Наушники","usb-c 1m реплика":"USB","x60 type-c/ip":"USB","x60 micro":"USB","наушники borofone bm35":"Наушники","usb bu16":"USB","наушник p2961":"Наушники","шнур type-c to type-c 15":"USB","зарядное устройство mi":"Зарядки","наушники ls-707/710":"Наушники","наушники redmi airdots pro3":"Наушники","наушники hoco m123":"Наушники","заряд.уст.мохом kh-22":"Зарядки","наушник byz se519a":"Наушники","наушники m1 pro type-c":"Наушники","зарядное устройство amaya e56+m":"Зарядки","wireless gharger kakusiga":"Зарядки","usb d42t":"USB","наушник byz se386a":"Наушники","usb bx32":"USB","наушники hoco m47":"Наушники","usb d02l vdenmenv":"USB","usb кабель по 700":"USB","airpods 3 по 3400":"Наушники","наушники g17":"Наушники","наушники pzx l22":"Наушники","usb d58v":"USB","usb gfuz micro":"USB","type-c xp-33":"USB","usb d02t vdenmenv":"USB","наушники по 500 yr":"Наушники","наушники ultrapods max":"Наушники","usb micro":"USB","usb x1":"USB","зарядка отау mrm-315":"Зарядки","airpods с экраном":"Наушники","наушники iphone7 type-c":"Наушники","зарядка gerlax ga-27":"Зарядки","usb szx 2m micro":"USB","наушники на шею dl01":"Наушники","наушник dr17":"Наушники","наушники bw29":"Наушники","usb c32 type-c":"USB","airpods 2 по 3400":"Наушники","наушники earpods":"Наушники","наушник xb380bt":"Наушники","usb для планшета samsung tab":"USB","usb-c lightning 1м":"USB","наушники на iphone 7":"Наушники","зу micro m3":"Зарядки","usb cable to lihgtning (1m)":"USB","зарядное устройство byz day-2002":"Зарядки","usb x21 hoco":"USB","usb gerlax gd-41":"USB","usb szx 2m ip":"USB","зу wuw 20w t74":"Зарядки","наушник dr18":"Наушники","airpods lux по 6900":"Наушники","usb 27w pd":"USB","наушники i9s 5.0":"Наушники","наушники по 650":"Наушники","usb bx37 micro":"USB","u015 usb type-c":"Зарядки","usb borofone bx100":"USB","usb szx ss206 2m":"USB","наушники wuw r186 type-c":"Наушники","usb d42v":"USB","usb c68 type-c to type-c":"USB","usb x99":"USB","наушник bm95":"Наушники","usb type-c/iphone amaya c09":"USB","usb-c to type c 60w":"USB","наушник byz se378a вакум":"Наушники","наушники на шею dl03":"Наушники","зарядное устройство gerlax ga-25p":"Зарядки","наушник h22":"Наушники","airpods 4":"Наушники","наушники kin-822":"Наушники","usb type-c to type-c original":"USB","hoco x50 micro":"USB","наушники wuw r179 type-c":"Наушники","наушник ultra":"Наушники","зарядное устройство xa-006":"Зарядки","usb cable to lightning":"USB","зарядное устройство bacy bc-05":"Зарядки","наушник type-c mletuble":"Наушники","зу amaya lightning":"Зарядки","наушники cr-8":"Наушники","зарядное устройство bass71a":"Зарядки","зарядное устройство redmi 120w":"Зарядки","наушники hf-14":"Наушники","наушники marshall major4":"Наушники","u72 samsung galaxy (usb hoco)":"USB","usb hoco x59":"USB","наушник borofone bm66":"Наушники","наушники remax rm-303":"Наушники","зу xa-007 lightning/tupe-c":"Зарядки","наушник m110":"Наушники","usb type-c x82/x86":"USB","шнур type-c to lightning":"USB","зарядка ba20a":"Зарядки","mletubl usb-c to lighting":"USB","usb gerlax l17":"USB","usb xp-40":"USB","наушники dg по 1200":"Наушники","usb lighting original":"USB","наушник x4":"Наушники","u010 usb":"Зарядки","usb szx ss268":"USB","ucb cable type to type-c (1m)":"USB","зарядное устройство borofone ba32a":"Зарядки","usb szx ss269":"USB","наушники wuw r170":"Наушники","usb wuw x213type-c":"USB","usb d07t":"USB","usb d59c vdenmenv":"USB","зарядное устройство gerlax a3":"Зарядки","usb c31 micro":"USB","наушники по 800":"Наушники","usb micro m07":"USB","зарядное устройство mi 33w":"Зарядки","usb micro cm05":"USB","наушники ge-14":"Наушники","наушник g9":"Наушники","usb borofone bx30":"USB","usb borofone bu33":"USB","usb 2m xp-55 type-c":"USB","зу lightning ga-32p":"Зарядки","usb wuw x195 type-c":"USB","наушники hoco m124":"Наушники","наушники hoco m122":"Наушники","usb type-c/lightning c14":"USB","usb xipin top lx21 ip по 1200":"USB"};
+
+function classifyGoods(name){
+  const n = normalizeItemName(name);
+  const mapped = GOODS_SUBCAT_MAP[n];
+  if (mapped) return mapped;
+  if (n.includes("наушник") || n.includes("airpods") || n.includes("гарнитур")) return "Наушники";
+  if (n.includes("зарядк") || n.includes("зу ") || n.includes("блок питания") || n.includes("адаптер питания")) return "Зарядки";
+  if (n.includes("usb") || n.includes("юсб") || n.includes("type-c") || n.includes("lightning")) return "USB";
+  return "Другие";
 }
 
 function toNum(v){
@@ -430,12 +499,15 @@ const HEADER_LABELS = {
   name: ["название товара", "товар"],
   qty: ["кол-во продаж", "кол-во"],
   profit: ["прибыль, ₸", "прибыль"],
+  // "Сумма" — это сумма продаж (продажная цена * кол-во), а НЕ прибыль. В разных форматах
+  // кассовых отчётов эта колонка называется по-разному, отсюда несколько вариантов.
+  sum: ["сумма продаж, ₸", "сумма продаж по р/ц"],
 };
 function findTableLayout(rows){
   for (let r = 0; r < Math.min(rows.length, 20); r++){
     const row = rows[r];
     if (!row) continue;
-    let nameCol=-1, qtyCol=-1, profitCol=-1;
+    let nameCol=-1, qtyCol=-1, profitCol=-1, sumCol=-1;
     for (let c = 0; c < row.length; c++){
       const cell = row[c];
       if (typeof cell !== "string") continue;
@@ -443,9 +515,10 @@ function findTableLayout(rows){
       if (nameCol===-1 && HEADER_LABELS.name.includes(v)) nameCol = c;
       if (qtyCol===-1 && HEADER_LABELS.qty.includes(v)) qtyCol = c;
       if (profitCol===-1 && HEADER_LABELS.profit.includes(v)) profitCol = c;
+      if (sumCol===-1 && HEADER_LABELS.sum.includes(v)) sumCol = c;
     }
     if (nameCol!==-1 && qtyCol!==-1 && profitCol!==-1){
-      return { headerRow: r, nameCol, qtyCol, profitCol };
+      return { headerRow: r, nameCol, qtyCol, profitCol, sumCol };
     }
   }
   return null;
@@ -468,8 +541,9 @@ async function parseXlsxFile(file){
     if (!name || typeof name !== "string") continue;
     if (isExcludedItem(name)) continue;
     const qty = toNum(row[layout.qtyCol]), profit = toNum(row[layout.profitCol]);
-    if (qty === 0 && profit === 0) continue;
-    items.push({name: name.trim(), qty, amount: 0, profit, cat: classify(name)});
+    const sum = layout.sumCol !== -1 ? toNum(row[layout.sumCol]) : 0;
+    if (qty === 0 && profit === 0 && sum === 0) continue;
+    items.push({name: name.trim(), qty, sum, profit, cat: classify(name)});
   }
   const periodMonth = extractPeriodMonth(allRows);
   return { items, periodMonth };
@@ -854,6 +928,65 @@ async function refreshMonthsEverywhereIfEmpty(){
   if (monthsCache.length===0) await refreshMonthsEverywhere();
 }
 
+/* ============ АГРЕГАЦИЯ ПО ПОДКАТЕГОРИЯМ (для объединённых Стекло/Товары) ============ */
+/* ============ АГРЕГАЦИЯ ПО ПОДКАТЕГОРИЯМ (для объединённых Стекло/Товары) ============ */
+// Важно: "сумма" — это сумма продаж (продажная цена * кол-во), а НЕ прибыль. Это две
+// разные величины из разных колонок кассового отчёта — не путать их между собой.
+function aggregateGlassBySubtype(items){
+  const m = {}; GLASS_SUBCATS.forEach(c=>m[c]={qty:0,profit:0,sum:0});
+  for (const it of items){ if (m[it.cat]){ m[it.cat].qty += it.qty; m[it.cat].profit += it.profit; m[it.cat].sum += (it.sum||0); } }
+  return m;
+}
+function aggregateGoodsBySubtype(items){
+  const m = {}; GOODS_SUBCATS.forEach(c=>m[c]={qty:0,profit:0,sum:0});
+  for (const it of items){
+    const sub = classifyGoods(it.name);
+    m[sub].qty += it.qty; m[sub].profit += it.profit; m[sub].sum += (it.sum||0);
+  }
+  return m;
+}
+function sumQtyProfit(bySubMap){
+  const t = {qty:0, profit:0, sum:0};
+  Object.values(bySubMap).forEach(v=>{ t.qty += v.qty; t.profit += v.profit; t.sum += (v.sum||0); });
+  return t;
+}
+function addTotals(items){
+  return items.reduce((a,it)=>({qty:a.qty+it.qty, profit:a.profit+it.profit, sum:a.sum+(it.sum||0)}), {qty:0,profit:0,sum:0});
+}
+// Компактная запись "120 шт / 340 000 ₸" — второе число это СУММА ПРОДАЖ (не прибыль).
+function fmtQtySum(qty, sum){
+  return `${fmt(qty)} шт / ${fmt(sum)} ₸`;
+}
+function buildDetailPanelHtml(glassBySub, goodsBySub){
+  const glassRows = GLASS_SUBCATS.filter(c=>glassBySub[c] && (glassBySub[c].qty || glassBySub[c].profit || glassBySub[c].sum))
+    .sort((a,b)=>glassBySub[b].profit-glassBySub[a].profit)
+    .map(c=>`<tr><td><span class="dot" style="background:${GLASS_SUBCAT_COLORS[c]}"></span>${c}</td><td class="num">${fmt(glassBySub[c].profit)}</td><td class="num">${fmtQtySum(glassBySub[c].qty, glassBySub[c].sum)}</td></tr>`).join("");
+  const goodsRows = GOODS_SUBCATS.filter(c=>goodsBySub[c] && (goodsBySub[c].qty || goodsBySub[c].profit || goodsBySub[c].sum))
+    .sort((a,b)=>goodsBySub[b].profit-goodsBySub[a].profit)
+    .map(c=>`<tr><td><span class="dot" style="background:${GOODS_SUBCAT_COLORS[c]}"></span>${c}</td><td class="num">${fmt(goodsBySub[c].profit)}</td><td class="num">${fmtQtySum(goodsBySub[c].qty, goodsBySub[c].sum)}</td></tr>`).join("");
+  return `
+    <div class="grid2">
+      <div>
+        <h4>Стекло по категориям</h4>
+        <table><tr><th>Категория</th><th>Прибыль, ₸</th><th>Шт / Сумма, ₸</th></tr>${glassRows || '<tr><td colspan=3>—</td></tr>'}</table>
+      </div>
+      <div>
+        <h4>Товары по категориям</h4>
+        <table><tr><th>Категория</th><th>Прибыль, ₸</th><th>Шт / Сумма, ₸</th></tr>${goodsRows || '<tr><td colspan=3>—</td></tr>'}</table>
+      </div>
+    </div>`;
+}
+function wireDetailToggle(scopeEl){
+  scopeEl.querySelectorAll(".toggle-detail").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const target = document.getElementById(btn.dataset.target);
+      const willShow = target.style.display === "none";
+      target.style.display = willShow ? "block" : "none";
+      btn.textContent = willShow ? "Скрыть ▴" : "Подробнее ▾";
+    });
+  });
+}
+
 function renderReport(rec){
   const content = document.getElementById("report-content");
   content.innerHTML = "";
@@ -863,32 +996,46 @@ function renderReport(rec){
   networkCard.className = "card";
   networkCard.innerHTML = `<h2>Сеть в целом — ${rec.monthLabel}</h2>
     <h3>Прибыль и продажи по категориям</h3>
-    <div class="chart-wrap" style="height:360px;"><canvas id="net-combined-chart"></canvas></div>`;
+    <div class="chart-wrap" style="height:360px;"><canvas id="net-combined-chart"></canvas></div>
+    <table>
+      <tr><th>Категория</th><th>Прибыль, ₸</th><th>Шт / Сумма, ₸</th><th>Процент по шт</th></tr>
+      <tbody id="net-summary-tbody"></tbody>
+    </table>
+    <button class="btn-link toggle-detail" data-target="net-detail">Подробнее ▾</button>
+    <div class="detail-panel" id="net-detail" style="display:none;"></div>`;
   content.appendChild(networkCard);
 
-  const netAgg = {};
-  REPORT_CAT_ORDER.forEach(c=>netAgg[c]={qty:0,profit:0});
-  for (const p of pointsWithData){
-    const agg = aggregateByCategory(rec.points[p].filter(i=>REPORT_CAT_ORDER.includes(i.cat)));
-    for (const c of REPORT_CAT_ORDER){ if (agg[c]){ netAgg[c].qty += agg[c].qty; netAgg[c].profit += agg[c].profit; } }
-  }
-  const sortedNetCats = [...REPORT_CAT_ORDER].sort((a,b)=>netAgg[b].profit-netAgg[a].profit);
-  reportCharts.push(makeCombinedNetChart("net-combined-chart", sortedNetCats,
-    sortedNetCats.map(c=>netAgg[c].profit),
-    sortedNetCats.map(c=>netAgg[c].qty)
-  ));
+  const allNetworkItems = pointsWithData.flatMap(p=>rec.points[p]);
+  const netGlassBySub = aggregateGlassBySubtype(allNetworkItems.filter(it=>GLASS_SUBCATS.includes(it.cat)));
+  const netGoodsBySub = aggregateGoodsBySubtype(allNetworkItems.filter(it=>it.cat==="ТОВАРЫ"));
+  const netGlassTotal = sumQtyProfit(netGlassBySub);
+  const netCaseTotal = addTotals(allNetworkItems.filter(it=>it.cat==="ЧЕХЛЫ"));
+  const netGoodsTotal = sumQtyProfit(netGoodsBySub);
+  const netGrandQty = netGlassTotal.qty + netCaseTotal.qty + netGoodsTotal.qty;
+
+  networkCard.querySelector("#net-summary-tbody").innerHTML = [
+    ["Стекло", netGlassTotal], ["Чехлы", netCaseTotal], ["Товары", netGoodsTotal],
+  ].map(([label, t])=>`<tr><td>${label}</td><td class="num">${fmt(t.profit)}</td><td class="num">${fmtQtySum(t.qty, t.sum)}</td><td class="num">${netGrandQty ? (t.qty/netGrandQty*100).toFixed(1) : "0.0"}%</td></tr>`).join("");
+  networkCard.querySelector("#net-detail").innerHTML = buildDetailPanelHtml(netGlassBySub, netGoodsBySub);
+  wireDetailToggle(networkCard);
+
+  reportCharts.push(makeCombinedNetChart("net-combined-chart", netGlassBySub, netCaseTotal, netGoodsBySub));
 
   pointsWithData.forEach((p, i)=>{
     const items = rec.points[p];
-    const glassAgg = aggregateByCategory(items.filter(it=>REPORT_CAT_ORDER.includes(it.cat)));
-    const sortedCats = REPORT_CAT_ORDER.filter(c=>glassAgg[c]).sort((a,b)=>glassAgg[b].profit-glassAgg[a].profit);
-    const totalGlassProfit = sortedCats.reduce((s,c)=>s+glassAgg[c].profit,0);
+    const glassBySub = aggregateGlassBySubtype(items.filter(it=>GLASS_SUBCATS.includes(it.cat)));
+    const goodsItems = items.filter(it=>it.cat==="ТОВАРЫ");
+    const goodsBySub = aggregateGoodsBySubtype(goodsItems);
+    const glassTotal = sumQtyProfit(glassBySub);
+    const caseTotal = addTotals(items.filter(it=>it.cat==="ЧЕХЛЫ"));
+    const goodsTotal = sumQtyProfit(goodsBySub);
+    const grandQty = glassTotal.qty + caseTotal.qty + goodsTotal.qty;
 
-    const tovary = items.filter(it=>it.cat==="ТОВАРЫ");
-    const top5Qty = topN(tovary, "qty");
-    const top5Profit = topN(tovary, "profit");
+    const top5Qty = topN(goodsItems, "qty");
+    const top5Profit = topN(goodsItems, "profit");
 
     const chartId = `point-chart-${i}`;
+    const detailId = `point-detail-${i}`;
     const card = document.createElement("div");
     card.className = "card point-section";
     card.innerHTML = `
@@ -896,9 +1043,11 @@ function renderReport(rec){
       <div class="grid2">
         <div>
           <table>
-            <tr><th>Категория</th><th>Шт</th><th>Прибыль, ₸</th><th>Доля</th></tr>
-            ${sortedCats.map(c=>`<tr><td>${c}</td><td class="num">${fmt(glassAgg[c].qty)}</td><td class="num">${fmt(glassAgg[c].profit)}</td><td class="num">${totalGlassProfit? (glassAgg[c].profit/totalGlassProfit*100).toFixed(1):"0.0"}%</td></tr>`).join("")}
+            <tr><th>Категория</th><th>Прибыль, ₸</th><th>Шт / Сумма, ₸</th><th>Процент по шт</th></tr>
+            ${[["Стекло",glassTotal],["Чехлы",caseTotal],["Товары",goodsTotal]].map(([label,t])=>`<tr><td>${label}</td><td class="num">${fmt(t.profit)}</td><td class="num">${fmtQtySum(t.qty,t.sum)}</td><td class="num">${grandQty ? (t.qty/grandQty*100).toFixed(1) : "0.0"}%</td></tr>`).join("")}
           </table>
+          <button class="btn-link toggle-detail" data-target="${detailId}">Подробнее ▾</button>
+          <div class="detail-panel" id="${detailId}" style="display:none;">${buildDetailPanelHtml(glassBySub, goodsBySub)}</div>
         </div>
         <div class="chart-wrap"><canvas id="${chartId}"></canvas></div>
       </div>
@@ -907,8 +1056,8 @@ function renderReport(rec){
         <div class="grid2">
           <div>
             <h3>Топ-5 по количеству</h3>
-            <table><tr><th>#</th><th>Товар</th><th>Шт</th></tr>
-            ${top5Qty.map((r,idx)=>`<tr><td>${idx+1}</td><td>${r.name}</td><td class="num">${fmt(r.qty)}</td></tr>`).join("") || "<tr><td colspan=3>—</td></tr>"}
+            <table><tr><th>#</th><th>Товар</th><th>Шт / Сумма, ₸</th></tr>
+            ${top5Qty.map((r,idx)=>`<tr><td>${idx+1}</td><td>${r.name}</td><td class="num">${fmtQtySum(r.qty, r.sum||0)}</td></tr>`).join("") || "<tr><td colspan=3>—</td></tr>"}
             </table>
           </div>
           <div>
@@ -921,10 +1070,10 @@ function renderReport(rec){
       </div>
     `;
     content.appendChild(card);
-    reportCharts.push(makeBarChart(chartId, sortedCats, [{label:"Прибыль, ₸", data: sortedCats.map(c=>glassAgg[c].profit), color:"#4472C4"}]));
+    wireDetailToggle(card);
+    reportCharts.push(makePointChart(chartId, glassBySub, caseTotal, goodsBySub));
   });
 }
-
 function fmt(n){ return Math.round(n).toLocaleString("ru-RU"); }
 
 function makeBarChart(canvasId, labels, datasets){
@@ -940,30 +1089,115 @@ function makeBarChart(canvasId, labels, datasets){
   });
 }
 
-// Комбинированный график "Сеть в целом" — прибыль и штуки по категориям в одном графике
-// для прямого сравнения, каждый показатель на своей шкале (иначе штуки не видно рядом с ₸).
-function makeCombinedNetChart(canvasId, labels, profitData, qtyData){
+// Плагин Chart.js для подписи общего значения над каждым столбцом (не только в подсказке
+// при наведении) — так шт/сумма и прибыль видно сразу, и это же попадает в картинку
+// графика при экспорте в Excel. Ровно одна подпись на столбец — без лишних цифр внутри.
+const totalLabelsPlugin = {
+  id: "totalLabels",
+  afterDatasetsDraw(chart){
+    const opts = chart.options.plugins && chart.options.plugins.totalLabels;
+    if (!opts || !opts.items) return;
+    const {ctx} = chart;
+    opts.items.forEach(item=>{
+      // Подпись рисуется точно над своим столбцом: X берём у реального бара нужного
+      // датасета (а не у общей отметки категории) — иначе при двух столбцах на одну
+      // категорию (₸ и шт) подписи съезжают и накладываются друг на друга.
+      const meta = chart.getDatasetMeta(item.datasetIndex);
+      const bar = meta && meta.data[item.index];
+      if (!bar) return;
+      const yScale = chart.scales[item.yAxisID || "y"];
+      if (!yScale) return;
+      const x = bar.x;
+      const y = yScale.getPixelForValue(item.value) - 10;
+      ctx.save();
+      ctx.font = "bold 11px Arial";
+      const w = ctx.measureText(item.text).width;
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.fillRect(x-w/2-4, y-9, w+8, 16);
+      ctx.fillStyle = "#1f2937";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(item.text, x, y);
+      ctx.restore();
+    });
+  }
+};
+Chart.register(totalLabelsPlugin);
+
+// Индексы датасетов-"якорей" для подписи над каждым столбцом (первый датасет своей стопки —
+// его x-координата совпадает с координатой всей стопки независимо от значения).
+// Порядок датасетов: 7 подкатегорий стекла (₸,шт каждая) = 0..13, Чехлы (₸,шт) = 14,15,
+// 4 подкатегории товаров (₸,шт каждая) = 16..23.
+const GLASS_DS_COUNT = GLASS_SUBCATS.length * 2;
+const CASE_PROFIT_DS = GLASS_DS_COUNT;
+const CASE_QTY_DS = GLASS_DS_COUNT + 1;
+const GOODS_PROFIT_DS = GLASS_DS_COUNT + 2;
+const GOODS_QTY_DS = GLASS_DS_COUNT + 3;
+
+// Цвета — классические, хорошо различимые (не оттенки одного тона), чтобы диаграмма
+// читалась с первого взгляда: у каждой подкатегории свой чёткий цвет.
+function makeCombinedNetChart(canvasId, glassBySub, caseTotal, goodsBySub, showTotalLabels){
+  if (showTotalLabels === undefined) showTotalLabels = true;
   const ctx = document.getElementById(canvasId);
+  const labels = ["Стекло","Чехлы","Товары"];
+  const datasets = [];
+  GLASS_SUBCATS.forEach(c=>{
+    const v = glassBySub[c] || {qty:0,profit:0,sum:0};
+    datasets.push({ label:`${c} (₸)`, data:[v.profit,0,0], backgroundColor:GLASS_SUBCAT_COLORS[c], stack:"profit", yAxisID:"y" });
+    datasets.push({ label:`${c} (шт)`, data:[v.qty,0,0], backgroundColor:GLASS_SUBCAT_COLORS[c], stack:"qty", yAxisID:"y1", sumValues:[v.sum,0,0] });
+  });
+  datasets.push({ label:"Чехлы (₸)", data:[0, caseTotal.profit, 0], backgroundColor:CASE_COLOR, stack:"profit", yAxisID:"y" });
+  datasets.push({ label:"Чехлы (шт)", data:[0, caseTotal.qty, 0], backgroundColor:CASE_COLOR, stack:"qty", yAxisID:"y1", sumValues:[0, caseTotal.sum, 0] });
+  GOODS_SUBCATS.forEach(c=>{
+    const v = goodsBySub[c] || {qty:0,profit:0,sum:0};
+    datasets.push({ label:`${c} (₸)`, data:[0,0,v.profit], backgroundColor:GOODS_SUBCAT_COLORS[c], stack:"profit", yAxisID:"y" });
+    datasets.push({ label:`${c} (шт)`, data:[0,0,v.qty], backgroundColor:GOODS_SUBCAT_COLORS[c], stack:"qty", yAxisID:"y1", sumValues:[0,0,v.sum] });
+  });
+
+  const glassTotal = sumQtyProfit(glassBySub);
+  const goodsTotal = sumQtyProfit(goodsBySub);
+
   return new Chart(ctx, {
     type:"bar",
-    data:{
-      labels,
-      datasets:[
-        { label:"Прибыль, ₸", data: profitData, backgroundColor:"#4472C4", yAxisID:"y" },
-        { label:"Шт", data: qtyData, backgroundColor:"#70AD47", yAxisID:"y1" },
-      ]
-    },
+    data:{ labels, datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:true}, title:{display:false}, tooltip:{enabled:true} },
+      layout:{ padding:{top: showTotalLabels ? 24 : 8} },
+      plugins:{
+        legend:{ display:true, labels:{ filter: item => !item.text.includes("(шт)"), font:{size:10} } },
+        title:{display:false},
+        // В подсказке при наведении/нажатии на "шт"-столбец показываем сразу и шт, и сумму
+        // продаж через "/" — сам вид графика (столбцы, цвета) при этом не меняется.
+        tooltip:{ enabled:true, callbacks:{ label: (c)=>{
+          if (c.dataset.sumValues){
+            const s = c.dataset.sumValues[c.dataIndex] || 0;
+            return `${c.dataset.label}: ${fmtQtySum(c.raw, s)}`;
+          }
+          return `${c.dataset.label}: ${fmt(c.raw)}`;
+        } } },
+        totalLabels: showTotalLabels ? { items:[
+          { datasetIndex:0, index:0, yAxisID:"y", value: glassTotal.profit, text: fmt(glassTotal.profit) },
+          { datasetIndex:CASE_PROFIT_DS, index:1, yAxisID:"y", value: caseTotal.profit, text: fmt(caseTotal.profit) },
+          { datasetIndex:GOODS_PROFIT_DS, index:2, yAxisID:"y", value: goodsTotal.profit, text: fmt(goodsTotal.profit) },
+          { datasetIndex:1, index:0, yAxisID:"y1", value: glassTotal.qty, text: fmtQtySum(glassTotal.qty, glassTotal.sum) },
+          { datasetIndex:CASE_QTY_DS, index:1, yAxisID:"y1", value: caseTotal.qty, text: fmtQtySum(caseTotal.qty, caseTotal.sum) },
+          { datasetIndex:GOODS_QTY_DS, index:2, yAxisID:"y1", value: goodsTotal.qty, text: fmtQtySum(goodsTotal.qty, goodsTotal.sum) },
+        ] } : { items: [] }
+      },
       scales:{
-        x:{ticks:{font:{size:10}}},
-        y:{ position:"left", ticks:{display:false}, grid:{display:false}, title:{display:true, text:"Прибыль, ₸"} },
-        y1:{ position:"right", ticks:{display:false}, grid:{display:false}, title:{display:true, text:"Шт"} },
+        x:{ stacked:true, ticks:{font:{size:11}} },
+        y:{ stacked:true, position:"left", ticks:{display:false}, grid:{display:false}, title:{display:true, text:"Прибыль, ₸"} },
+        y1:{ stacked:true, position:"right", ticks:{display:false}, grid:{display:false}, title:{display:true, text:"Шт / Сумма"} },
       }
     }
   });
 }
+
+// По каждой точке — тот же график, что и в "Сеть в целом" (те же 3 группы, те же цвета),
+// но без подписей общих сумм над столбцами — тут они не нужны (только у сети в целом).
+function makePointChart(canvasId, glassBySub, caseTotal, goodsBySub){
+  return makeCombinedNetChart(canvasId, glassBySub, caseTotal, goodsBySub, false);
+}
+
 
 /* ============ ЭКСПОРТ В EXCEL ============ */
 // Вставляет картинку графика (снимок уже отрисованного Chart.js) в лист рядом с таблицей.
@@ -984,34 +1218,53 @@ async function exportReportExcel(){
 
   const wb = new ExcelJS.Workbook();
 
-  const netAgg = {}; REPORT_CAT_ORDER.forEach(c=>netAgg[c]={qty:0,profit:0});
-  for (const p of pointsWithData){
-    const agg = aggregateByCategory(rec.points[p].filter(i=>REPORT_CAT_ORDER.includes(i.cat)));
-    for (const c of REPORT_CAT_ORDER){ if (agg[c]){ netAgg[c].qty+=agg[c].qty; netAgg[c].profit+=agg[c].profit; } }
-  }
-  const sortedNet = [...REPORT_CAT_ORDER].sort((a,b)=>netAgg[b].profit-netAgg[a].profit);
+  const allNetworkItems = pointsWithData.flatMap(p=>rec.points[p]);
+  const netGlassBySub = aggregateGlassBySubtype(allNetworkItems.filter(it=>GLASS_SUBCATS.includes(it.cat)));
+  const netGoodsBySub = aggregateGoodsBySubtype(allNetworkItems.filter(it=>it.cat==="ТОВАРЫ"));
+  const netGlassTotal = sumQtyProfit(netGlassBySub);
+  const netCaseTotal = allNetworkItems.filter(it=>it.cat==="ЧЕХЛЫ").reduce((a,it)=>({qty:a.qty+it.qty, profit:a.profit+it.profit}), {qty:0,profit:0});
+  const netGoodsTotal = sumQtyProfit(netGoodsBySub);
 
   const wsSummary = wb.addWorksheet("Сводка");
   wsSummary.columns = [{width:24},{width:12},{width:14}];
   wsSummary.addRow(["Категория","Шт","Прибыль, ₸"]);
-  sortedNet.forEach(c=>wsSummary.addRow([c, netAgg[c].qty, netAgg[c].profit]));
+  [["Стекло",netGlassTotal],["Чехлы",netCaseTotal],["Товары",netGoodsTotal]].forEach(([c,t])=>wsSummary.addRow([c, t.qty, t.profit]));
+  wsSummary.addRow([]);
+  wsSummary.addRow(["СТЕКЛО ПО КАТЕГОРИЯМ"]); wsSummary.addRow(["Категория","Шт","Прибыль, ₸"]);
+  GLASS_SUBCATS.filter(c=>netGlassBySub[c] && (netGlassBySub[c].qty||netGlassBySub[c].profit)).sort((a,b)=>netGlassBySub[b].profit-netGlassBySub[a].profit)
+    .forEach(c=>wsSummary.addRow([c, netGlassBySub[c].qty, netGlassBySub[c].profit]));
+  wsSummary.addRow([]);
+  wsSummary.addRow(["ТОВАРЫ ПО КАТЕГОРИЯМ"]); wsSummary.addRow(["Категория","Шт","Прибыль, ₸"]);
+  GOODS_SUBCATS.filter(c=>netGoodsBySub[c] && (netGoodsBySub[c].qty||netGoodsBySub[c].profit)).sort((a,b)=>netGoodsBySub[b].profit-netGoodsBySub[a].profit)
+    .forEach(c=>wsSummary.addRow([c, netGoodsBySub[c].qty, netGoodsBySub[c].profit]));
   // reportCharts[0] = совмещённый график прибыли и штук по сети
   addChartImageToSheet(wb, wsSummary, reportCharts[0], 4, 0);
 
   pointsWithData.forEach((p, i)=>{
     const items = rec.points[p];
-    const glassAgg = aggregateByCategory(items.filter(it=>REPORT_CAT_ORDER.includes(it.cat)));
-    const sortedCats = REPORT_CAT_ORDER.filter(c=>glassAgg[c]).sort((a,b)=>glassAgg[b].profit-glassAgg[a].profit);
-    const tovary = items.filter(it=>it.cat==="ТОВАРЫ");
-    const top5Qty = topN(tovary,"qty"), top5Profit = topN(tovary,"profit");
+    const glassBySub = aggregateGlassBySubtype(items.filter(it=>GLASS_SUBCATS.includes(it.cat)));
+    const goodsItems = items.filter(it=>it.cat==="ТОВАРЫ");
+    const goodsBySub = aggregateGoodsBySubtype(goodsItems);
+    const glassTotal = sumQtyProfit(glassBySub);
+    const caseTotal = items.filter(it=>it.cat==="ЧЕХЛЫ").reduce((a,it)=>({qty:a.qty+it.qty, profit:a.profit+it.profit}), {qty:0,profit:0});
+    const goodsTotal = sumQtyProfit(goodsBySub);
+    const top5Qty = topN(goodsItems,"qty"), top5Profit = topN(goodsItems,"profit");
 
     const sheetName = p.replace("/","-").slice(0,31);
     const ws = wb.addWorksheet(sheetName);
     ws.columns = [{width:6},{width:34},{width:14}];
 
-    ws.addRow(["РЕЙТИНГ КАТЕГОРИЙ ПО ПРИБЫЛИ"]);
+    ws.addRow(["СВОДКА ПО КАТЕГОРИЯМ"]);
     ws.addRow(["Категория","Шт","Прибыль, ₸"]);
-    sortedCats.forEach(c=>ws.addRow([c, glassAgg[c].qty, glassAgg[c].profit]));
+    [["Стекло",glassTotal],["Чехлы",caseTotal],["Товары",goodsTotal]].forEach(([c,t])=>ws.addRow([c, t.qty, t.profit]));
+    ws.addRow([]);
+    ws.addRow(["СТЕКЛО ПО КАТЕГОРИЯМ"]); ws.addRow(["Категория","Шт","Прибыль, ₸"]);
+    GLASS_SUBCATS.filter(c=>glassBySub[c] && (glassBySub[c].qty||glassBySub[c].profit)).sort((a,b)=>glassBySub[b].profit-glassBySub[a].profit)
+      .forEach(c=>ws.addRow([c, glassBySub[c].qty, glassBySub[c].profit]));
+    ws.addRow([]);
+    ws.addRow(["ТОВАРЫ ПО КАТЕГОРИЯМ"]); ws.addRow(["Категория","Шт","Прибыль, ₸"]);
+    GOODS_SUBCATS.filter(c=>goodsBySub[c] && (goodsBySub[c].qty||goodsBySub[c].profit)).sort((a,b)=>goodsBySub[b].profit-goodsBySub[a].profit)
+      .forEach(c=>ws.addRow([c, goodsBySub[c].qty, goodsBySub[c].profit]));
     ws.addRow([]);
     ws.addRow(["ТОВАРЫ — ТОП-5 ПО КОЛИЧЕСТВУ"]); ws.addRow(["#","Товар","Шт"]);
     top5Qty.forEach((r,idx)=>ws.addRow([idx+1, r.name, r.qty]));
@@ -1032,11 +1285,12 @@ async function exportReportExcel(){
   URL.revokeObjectURL(a.href);
 }
 
+
 /* ============ ИНСАЙТЫ / СРАВНЕНИЕ ТОЧЕК ============ */
-let catCompareChart = null;
 document.getElementById("insights-month-select").addEventListener("change", loadInsightsTab);
 document.getElementById("ratio-slider").addEventListener("input", e=>{ document.getElementById("ratio-val").textContent = e.target.value; renderInsightsList(); });
 document.getElementById("diff-slider").addEventListener("input", e=>{ document.getElementById("diff-val").textContent = e.target.value; renderInsightsList(); });
+document.getElementById("insights-cat-filter").addEventListener("change", renderInsightsList);
 
 let currentInsightsData = null;
 async function loadInsightsTab(){
@@ -1045,26 +1299,123 @@ async function loadInsightsTab(){
   if (!month) return;
   const rec = await localGetMonth(month);
   currentInsightsData = rec;
-  renderCatCompareChart(rec);
   renderGlassCaseChart(rec);
-  renderGroupChart(rec, POINT_GROUPS["Группа А"], "chart-group-a", "groupAChart");
-  renderGroupChart(rec, POINT_GROUPS["Группа Б"], "chart-group-b", "groupBChart");
+  renderGlassGoodsByPoint(rec);
   renderInsightsList();
 }
 
-function renderCatCompareChart(rec){
+// Две диаграммы "Стёкла" и "Товары" по всем точкам сети (в штуках). Клик по любой из
+// диаграмм открывает модальное окно с разбивкой по подвидам (для стёкол — 5D/6D/18D/
+// Приват/Гидрогель и т.д., для товаров — Наушники/Зарядки/USB/Другие) по тем же точкам.
+let glassByPointChart = null;
+let goodsByPointChart = null;
+function renderGlassGoodsByPoint(rec){
   const pointsWithData = POINTS.filter(p=>rec.points[p]);
-  const datasets = pointsWithData.map((p,i)=>{
-    const agg = aggregateByCategory(rec.points[p].filter(it=>INSIGHTS_CAT_ORDER.includes(it.cat)));
-    return { label:p, data: INSIGHTS_CAT_ORDER.map(c=>agg[c]?agg[c].profit:0), backgroundColor: POINT_COLORS[i%POINT_COLORS.length] };
+  // Цвет точки закрепляется за её местом в общем списке точек, чтобы один и тот же
+  // магазин был одного цвета на обеих диаграммах, даже после сортировки по убыванию.
+  const pointColorMap = {};
+  pointsWithData.forEach((p,i)=>{ pointColorMap[p] = POINT_COLORS[i%POINT_COLORS.length]; });
+
+  const rows = pointsWithData.map(p=>{
+    const items = rec.points[p];
+    let gQty=0, gSum=0, tQty=0, tSum=0;
+    for (const it of items){
+      if (GLASS_SUBCATS.includes(it.cat)){ gQty += it.qty; gSum += (it.sum||0); }
+      else if (it.cat === "ТОВАРЫ"){ tQty += it.qty; tSum += (it.sum||0); }
+    }
+    return { p, gQty, gSum, tQty, tSum };
   });
-  if (catCompareChart) catCompareChart.destroy();
-  catCompareChart = new Chart(document.getElementById("chart-cat-compare"), {
+
+  // Столбцы — от самого высокого к самому низкому, отдельно для каждой диаграммы
+  // (для "Стёкол" и "Товаров" порядок точек может отличаться).
+  const glassRows = [...rows].sort((a,b)=>b.gQty-a.gQty);
+  const goodsRows = [...rows].sort((a,b)=>b.tQty-a.tQty);
+
+  const makeTooltip = (rowsArr, sumKey)=>({ callbacks:{ label:(c)=> fmtQtySum(c.raw, rowsArr[c.dataIndex][sumKey]||0) } });
+
+  if (glassByPointChart) glassByPointChart.destroy();
+  glassByPointChart = new Chart(document.getElementById("chart-glass-by-point"), {
     type:"bar",
-    data:{ labels: INSIGHTS_CAT_ORDER, datasets },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
+    data:{ labels: glassRows.map(r=>r.p), datasets:[{ label:"Стёкла", data: glassRows.map(r=>r.gQty), backgroundColor: glassRows.map(r=>pointColorMap[r.p]) }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, onClick: ()=>openDrillModal("glass", rec, pointsWithData),
+      plugins:{ legend:{display:false}, tooltip: makeTooltip(glassRows, "gSum") },
+      scales:{ y:{ ticks:{display:false}, grid:{display:false} } }
+    }
+  });
+  if (goodsByPointChart) goodsByPointChart.destroy();
+  goodsByPointChart = new Chart(document.getElementById("chart-goods-by-point"), {
+    type:"bar",
+    data:{ labels: goodsRows.map(r=>r.p), datasets:[{ label:"Товары", data: goodsRows.map(r=>r.tQty), backgroundColor: goodsRows.map(r=>pointColorMap[r.p]) }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, onClick: ()=>openDrillModal("goods", rec, pointsWithData),
+      plugins:{ legend:{display:false}, tooltip: makeTooltip(goodsRows, "tSum") },
+      scales:{ y:{ ticks:{display:false}, grid:{display:false} } }
+    }
   });
 }
+
+// Модальное окно с разбивкой по подвидам: одна круговая диаграмма на каждый подвид
+// (5D/6D/18D/.../Гидрогель или Наушники/Зарядки/USB/Другие), доли — точки сети (шт/%).
+let drillModalCharts = [];
+function openDrillModal(kind, rec, pointsWithData){
+  const subcats = kind === "glass" ? GLASS_SUBCATS : GOODS_SUBCATS;
+  document.getElementById("drill-modal-title").textContent = kind === "glass" ? "Стёкла по подвидам" : "Товары по подвидам";
+  drillModalCharts.forEach(ch=>ch.destroy());
+  drillModalCharts.length = 0;
+  const container = document.getElementById("drill-modal-piegrid");
+  container.innerHTML = "";
+  const pointColors = pointsWithData.map((p,i)=>POINT_COLORS[i%POINT_COLORS.length]);
+
+  subcats.forEach(sub=>{
+    const data = pointsWithData.map(p=>{
+      let s = 0;
+      for (const it of rec.points[p]){
+        if (kind === "glass"){ if (it.cat === sub) s += it.qty; }
+        else { if (it.cat === "ТОВАРЫ" && classifyGoods(it.name) === sub) s += it.qty; }
+      }
+      return s;
+    });
+    const total = data.reduce((a,b)=>a+b,0);
+    const item = document.createElement("div");
+    item.className = "pie-item";
+    const title = document.createElement("h4");
+    title.textContent = sub;
+    const wrap = document.createElement("div");
+    wrap.className = "pie-item-wrap";
+    const canvas = document.createElement("canvas");
+    wrap.appendChild(canvas);
+    item.appendChild(title);
+    item.appendChild(wrap);
+    container.appendChild(item);
+    if (total === 0){
+      wrap.innerHTML = "<p class='muted' style='text-align:center;margin-top:70px;'>Нет продаж</p>";
+      return;
+    }
+    const chart = new Chart(canvas, {
+      type:"pie",
+      data:{ labels: pointsWithData, datasets:[{ data, backgroundColor: pointColors }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{ position:"bottom", labels:{ boxWidth:9, font:{size:9}, padding:6 } },
+          tooltip:{ callbacks:{ label:(c)=>{
+            const pct = total>0 ? (c.raw/total*100).toFixed(1) : 0;
+            return `${c.label}: ${fmt(c.raw)} шт (${pct}%)`;
+          } } }
+        }
+      }
+    });
+    drillModalCharts.push(chart);
+  });
+  document.getElementById("drill-modal-overlay").style.display = "flex";
+}
+document.getElementById("drill-modal-close").addEventListener("click", ()=>{
+  document.getElementById("drill-modal-overlay").style.display = "none";
+});
+document.getElementById("drill-modal-overlay").addEventListener("click", (e)=>{
+  if (e.target.id === "drill-modal-overlay") document.getElementById("drill-modal-overlay").style.display = "none";
+});
 
 // Стёкла для этого соотношения — все категории стекла КРОМЕ Гидрогеля (Skin и линзы на
 // камеры сюда изначально не входят, см. GLASS_RATIO_CATS). Чехлы — категория "ЧЕХЛЫ", все
@@ -1074,7 +1425,8 @@ let glassCaseProfitChart = null;
 function renderGlassCaseChart(rec){
   const pointsWithData = POINTS.filter(p=>rec.points[p]);
   const glassQtyData = [], caseQtyData = [], glassProfitData = [], caseProfitData = [];
-  let totalGlassQty = 0, totalCaseQty = 0, totalGlassProfit = 0, totalCaseProfit = 0;
+  const glassSumData = [], caseSumData = [];
+  let totalGlassQty = 0, totalCaseQty = 0, totalGlassProfit = 0, totalCaseProfit = 0, totalGlassSum = 0, totalCaseSum = 0;
   pointsWithData.forEach(p=>{
     const items = rec.points[p];
     const glassItems = items.filter(it=>GLASS_RATIO_CATS.includes(it.cat));
@@ -1083,13 +1435,23 @@ function renderGlassCaseChart(rec){
     const caseQty = caseItems.reduce((s,it)=>s+it.qty,0);
     const glassProfit = glassItems.reduce((s,it)=>s+it.profit,0);
     const caseProfit = caseItems.reduce((s,it)=>s+it.profit,0);
+    const glassSum = glassItems.reduce((s,it)=>s+(it.sum||0),0);
+    const caseSum = caseItems.reduce((s,it)=>s+(it.sum||0),0);
     glassQtyData.push(glassQty); caseQtyData.push(caseQty);
     glassProfitData.push(glassProfit); caseProfitData.push(caseProfit);
+    glassSumData.push(glassSum); caseSumData.push(caseSum);
     totalGlassQty += glassQty; totalCaseQty += caseQty;
     totalGlassProfit += glassProfit; totalCaseProfit += caseProfit;
+    totalGlassSum += glassSum; totalCaseSum += caseSum;
   });
   const summaryEl = document.getElementById("glass-case-summary");
-  if (summaryEl) summaryEl.textContent = `Всего по сети: ${fmt(totalGlassQty)} шт стёкол (${fmt(totalGlassProfit)} ₸) — ${fmt(totalCaseQty)} шт чехлов (${fmt(totalCaseProfit)} ₸)`;
+  if (summaryEl) summaryEl.textContent = `Всего по сети: ${fmtQtySum(totalGlassQty, totalGlassSum)} стёкол (прибыль ${fmt(totalGlassProfit)} ₸) — ${fmtQtySum(totalCaseQty, totalCaseSum)} чехлов (прибыль ${fmt(totalCaseProfit)} ₸)`;
+  // В подсказке при наведении на график "шт" добавляем сумму продаж через "/" — сам вид
+  // графика не меняется, только текст подсказки.
+  const qtyTooltip = { callbacks:{ label:(c)=>{
+    const sumArr = c.datasetIndex === 0 ? glassSumData : caseSumData;
+    return `${c.dataset.label}: ${fmtQtySum(c.raw, sumArr[c.dataIndex]||0)}`;
+  } } };
   if (glassCaseChart) glassCaseChart.destroy();
   glassCaseChart = new Chart(document.getElementById("chart-glass-case"), {
     type:"bar",
@@ -1097,7 +1459,7 @@ function renderGlassCaseChart(rec){
       { label:"Стёкла", data: glassQtyData, backgroundColor:"#4472C4" },
       { label:"Чехлы", data: caseQtyData, backgroundColor:"#ED7D31" },
     ]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}, tooltip: qtyTooltip}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
   });
   if (glassCaseProfitChart) glassCaseProfitChart.destroy();
   glassCaseProfitChart = new Chart(document.getElementById("chart-glass-case-profit"), {
@@ -1110,49 +1472,54 @@ function renderGlassCaseChart(rec){
   });
 }
 
+
 // Группа А и Группа Б — фиксированные объединения точек. Точки внутри каждой группы
 // сравниваются между собой (а не группа с группой).
 const POINT_GROUPS = {
   "Группа А": ["ШР","АЦ","КС","ЖГ"],
   "Группа Б": ["ХБК","ВОКЗ/ЖД","ОРАЛ","ХРОМ"],
 };
-let groupAChart = null;
-let groupBChart = null;
-function renderGroupChart(rec, groupPoints, canvasId, chartVarName){
-  const pointsWithData = groupPoints.filter(p=>rec.points[p]);
-  const datasets = pointsWithData.map((p,i)=>{
-    const agg = aggregateByCategory(rec.points[p].filter(it=>INSIGHTS_CAT_ORDER.includes(it.cat)));
-    return { label:p, data: INSIGHTS_CAT_ORDER.map(c=>agg[c]?agg[c].profit:0), backgroundColor: POINT_COLORS[i%POINT_COLORS.length] };
-  });
-  if (chartVarName === "groupAChart"){
-    if (groupAChart) groupAChart.destroy();
-    groupAChart = new Chart(document.getElementById(canvasId), {
-      type:"bar",
-      data:{ labels: INSIGHTS_CAT_ORDER, datasets },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
-    });
-  } else {
-    if (groupBChart) groupBChart.destroy();
-    groupBChart = new Chart(document.getElementById(canvasId), {
-      type:"bar",
-      data:{ labels: INSIGHTS_CAT_ORDER, datasets },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom"}}, scales:{y:{ticks:{display:false}, grid:{display:false}}} }
-    });
+// Категории для поиска заметных расхождений между точками — своя, более крупная
+// группировка специально для инсайтов (не путать с категориями отчёта): всё стекло
+// (кроме гидрогеля) объединено в одну "Стекло", Гидрогель — отдельно (включая гидрогель
+// для планшетов/часов/камеры — все они уже определяются как "Гидрогель" в справочнике),
+// "Адаптеры" — отдельная категория только здесь (в отчёте за месяц остаётся "Другие"),
+// Чехлы не сравниваем — для них есть отдельный блок "Соотношение стёкол и чехлов".
+const INSIGHTS_STECLO_CATS = new Set([...GLASS_SUBCATS, "Другое стекло", "Матовое стекло", "Линза на камеры", "Skin"]);
+INSIGHTS_STECLO_CATS.delete("Гидрогель");
+// Инсайды сравниваются по каждому подвиду отдельно (5D отдельно от 6D, Наушники отдельно
+// от USB и т.д.) — категория (Стекло/Гидрогель/Наушники/...) используется только для
+// фильтра внизу, а не для объединения подвидов в общую сумму.
+function insightsSubtypeOf(it){
+  if (it.cat === "ЧЕХЛЫ") return null;
+  if (it.cat === "Гидрогель") return "Гидрогель";
+  if (INSIGHTS_STECLO_CATS.has(it.cat)) return it.cat;
+  if (it.cat === "ТОВАРЫ"){
+    const sub = classifyGoods(it.name);
+    if (sub === "Другие" && normalizeItemName(it.name).includes("адаптер")) return "Адаптеры";
+    return sub;
   }
+  return null;
+}
+function insightsFilterCategoryOf(subtype){
+  if (subtype === "Гидрогель") return "Гидрогель";
+  if (["Наушники","Зарядки","USB","Адаптеры","Другие"].includes(subtype)) return subtype;
+  return "Стекло";
 }
 
 function computeGroupInsights(rec, groupPoints, ratioThresh, diffThresh){
   const pointsWithData = groupPoints.filter(p=>rec.points[p]);
-  const byName = {};
+  const bySub = {};
   for (const p of pointsWithData){
     for (const it of rec.points[p]){
-      if (it.cat === "ЧЕХЛЫ") continue;
-      if (!byName[it.name]) byName[it.name] = {};
-      byName[it.name][p] = (byName[it.name][p]||0) + it.qty;
+      const sub = insightsSubtypeOf(it);
+      if (!sub) continue;
+      if (!bySub[sub]) bySub[sub] = {};
+      bySub[sub][p] = (bySub[sub][p]||0) + it.qty;
     }
   }
   const insights = [];
-  for (const [name, vals] of Object.entries(byName)){
+  for (const [name, vals] of Object.entries(bySub)){
     const full = {}; pointsWithData.forEach(p=>full[p]=vals[p]||0);
     const entries = Object.entries(full);
     if (entries.length < 2) continue;
@@ -1162,11 +1529,11 @@ function computeGroupInsights(rec, groupPoints, ratioThresh, diffThresh){
     if (maxP[1] === 0) continue;
     const ratio = minP[1]>0 ? maxP[1]/minP[1] : Infinity;
     if (diff >= diffThresh && (ratio === Infinity || ratio >= ratioThresh)){
-      insights.push({name, maxP, minP, diff, ratio});
+      insights.push({name, filterCat: insightsFilterCategoryOf(name), maxP, minP, diff, ratio});
     }
   }
   insights.sort((a,b)=>b.diff-a.diff);
-  return insights.slice(0,25);
+  return insights;
 }
 
 function renderInsightsGroupList(containerId, top){
@@ -1174,7 +1541,7 @@ function renderInsightsGroupList(containerId, top){
   if (top.length===0){ list.innerHTML = `<p class="muted">Заметных расхождений при текущих порогах не найдено.</p>`; return; }
   list.innerHTML = top.map(ins=>{
     const ratioTxt = ins.ratio===Infinity ? `только в ${ins.maxP[0]}` : `в ${ins.ratio.toFixed(1)}× больше`;
-    return `<div class="insight-item"><b>«${ins.name}»</b>: ${ins.maxP[0]} — ${fmt(ins.maxP[1])} шт, ${ins.minP[0]} — ${fmt(ins.minP[1])} шт <span class="badge">${ratioTxt}</span></div>`;
+    return `<div class="insight-item"><b>${ins.name}</b>: ${ins.maxP[0]} — ${fmt(ins.maxP[1])} шт, ${ins.minP[0]} — ${fmt(ins.minP[1])} шт <span class="badge">${ratioTxt}</span></div>`;
   }).join("");
 }
 
@@ -1183,12 +1550,18 @@ function renderInsightsList(){
   const rec = currentInsightsData;
   const ratioThresh = parseFloat(document.getElementById("ratio-slider").value);
   const diffThresh = parseFloat(document.getElementById("diff-slider").value);
+  const catFilter = document.getElementById("insights-cat-filter").value;
 
-  const topA = computeGroupInsights(rec, POINT_GROUPS["Группа А"], ratioThresh, diffThresh);
-  const topB = computeGroupInsights(rec, POINT_GROUPS["Группа Б"], ratioThresh, diffThresh);
+  let topA = computeGroupInsights(rec, POINT_GROUPS["Группа А"], ratioThresh, diffThresh);
+  let topB = computeGroupInsights(rec, POINT_GROUPS["Группа Б"], ratioThresh, diffThresh);
+  if (catFilter){
+    topA = topA.filter(ins=>ins.filterCat === catFilter);
+    topB = topB.filter(ins=>ins.filterCat === catFilter);
+  }
   renderInsightsGroupList("insights-list-a", topA);
   renderInsightsGroupList("insights-list-b", topB);
 }
+
 
 /* ============ РЕЗЕРВНАЯ КОПИЯ ============ */
 document.getElementById("backup-download-btn").addEventListener("click", async ()=>{

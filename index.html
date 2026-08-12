@@ -452,8 +452,41 @@ const GLASS_SUBCAT_COLORS = {
 const CASE_COLOR = "#8B4513";
 const GOODS_COLOR = "#264478";
 // Подкатегории "Товаров" (всё, что не стекло и не чехлы) — только для отчёта за месяц.
+// Это РЕАЛЬНЫЕ подкатегории, в них классифицируется каждый товар (classifyGoods) — этот
+// список не меняется. Отображение (группировка "Зарядки"+USB+"Адаптеры" в одну строку/
+// сегмент "Зарядки") — отдельный, чисто визуальный слой поверх этих данных, см.
+// GOODS_DISPLAY_GROUPS/groupGoodsForDisplay ниже.
 const GOODS_SUBCATS = ["Наушники","Беспроводные наушники","Зарядки","USB","Адаптеры","9000","Другие"];
 const GOODS_SUBCAT_COLORS = { "Наушники":"#FF66CC", "Беспроводные наушники":"#C00080", "Зарядки":"#264478", "USB":"#00B0F0", "Адаптеры":"#92D050", "9000":"#7F6000", "Другие":"#A6A6A6" };
+
+// По указанию пользователя, во вкладке "Отчёт за месяц" (таблицы, детальная "Подробнее",
+// графики, экспорт в Excel) подкатегории "Зарядки"/USB/"Адаптеры" схлопываются в одну
+// видимую строку/сегмент "Зарядки" (сумма всех трёх), с возможностью развернуть и увидеть
+// исходные три подкатегории по отдельности. Наушники/Беспроводные наушники/9000/Другие не
+// группируются — показываются как есть. Вкладка "Инсайты" НЕ затронута — там используется
+// GOODS_SUBCATS напрямую, без этой группировки, фильтр там остаётся с 3 отдельными опциями.
+const GOODS_DISPLAY_GROUPS = { "Зарядки": ["Зарядки","USB","Адаптеры"] };
+// Порядок отображаемых строк/сегментов товаров в отчёте: реальные подкатегории, КРОМЕ тех,
+// что входят в объединённую группу (они заменяются одной строкой "Зарядки" на своём месте).
+const GOODS_DISPLAY_ORDER = ["Наушники","Беспроводные наушники","Зарядки","9000","Другие"];
+// Сворачивает {qty,profit,sum} по каждой РЕАЛЬНОЙ подкатегории (goodsBySub, результат
+// aggregateGoodsBySubtype) в объект по ОТОБРАЖАЕМЫМ группам — для группы "Зарядки" сюда же
+// кладётся поле _parts со вкладом каждой исходной подкатегории (для разворота по кнопке).
+function groupGoodsForDisplay(goodsBySub){
+  const out = {};
+  GOODS_DISPLAY_ORDER.forEach(displayCat=>{
+    const members = GOODS_DISPLAY_GROUPS[displayCat] || [displayCat];
+    const t = {qty:0, profit:0, sum:0};
+    const parts = {};
+    members.forEach(m=>{
+      const v = goodsBySub[m] || {qty:0,profit:0,sum:0};
+      t.qty += v.qty; t.profit += v.profit; t.sum += (v.sum||0);
+      if (members.length > 1) parts[m] = v;
+    });
+    out[displayCat] = members.length > 1 ? {...t, _parts: parts} : t;
+  });
+  return out;
+}
 const RU_MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const POINT_COLORS = ["#4472C4","#ED7D31","#A5A5A5","#FFC000","#5B9BD5","#70AD47","#264478","#9E480E"];
 
@@ -1328,14 +1361,32 @@ function fmtQtySum(qty, sum){
 // пользователя главной метрикой сравнения теперь сумма продаж, а не количество штук
 // (количество по-прежнему показывается в ячейке "Шт / Сумма, ₸", просто больше не участвует
 // в проценте). Вкладка "Инсайты" не затронута — там сравнение по-прежнему по количеству.
-function buildDetailPanelHtml(glassBySub, goodsBySub, grandTotal){
+// idPrefix — уникальный на странице префикс (например "net" или "point-2"), нужен, чтобы
+// id строки-разворота группы "Зарядки" (USB/Зарядки/Адаптеры) не совпадал между карточкой
+// сети и карточками разных точек, отрендеренными на одной странице одновременно.
+function buildDetailPanelHtml(glassBySub, goodsBySub, grandTotal, idPrefix){
   const pctOf = (num, den)=> den ? `${(num/den*100).toFixed(1)}%` : "0.0%";
   const glassRows = GLASS_SUBCATS.filter(c=>glassBySub[c] && (glassBySub[c].qty || glassBySub[c].profit || glassBySub[c].sum))
     .sort((a,b)=>glassBySub[b].profit-glassBySub[a].profit)
     .map(c=>`<tr><td><span class="dot" style="background:${GLASS_SUBCAT_COLORS[c]}"></span>${c}</td><td class="num">${fmt(glassBySub[c].profit)}</td><td class="num">${pctOf(glassBySub[c].profit, grandTotal.profit)}</td><td class="num">${fmtQtySum(glassBySub[c].qty, glassBySub[c].sum)}</td><td class="num">${pctOf(glassBySub[c].sum, grandTotal.sum)}</td></tr>`).join("");
-  const goodsRows = GOODS_SUBCATS.filter(c=>goodsBySub[c] && (goodsBySub[c].qty || goodsBySub[c].profit || goodsBySub[c].sum))
-    .sort((a,b)=>goodsBySub[b].profit-goodsBySub[a].profit)
-    .map(c=>`<tr><td><span class="dot" style="background:${GOODS_SUBCAT_COLORS[c]}"></span>${c}</td><td class="num">${fmt(goodsBySub[c].profit)}</td><td class="num">${pctOf(goodsBySub[c].profit, grandTotal.profit)}</td><td class="num">${fmtQtySum(goodsBySub[c].qty, goodsBySub[c].sum)}</td><td class="num">${pctOf(goodsBySub[c].sum, grandTotal.sum)}</td></tr>`).join("");
+  // Товары показываются по ОТОБРАЖАЕМЫМ группам (groupGoodsForDisplay) — "Зарядки" здесь уже
+  // сумма USB+Зарядки+Адаптеры. Если у строки есть _parts (это и есть объединённая группа),
+  // рядом с названием добавляется кнопка "Подробнее ▾" — при клике разворачивается ещё одна
+  // маленькая таблица с тремя исходными подкатегориями (тот же механизм toggle-detail, что
+  // используется для основной кнопки "Подробнее" карточки).
+  const goodsDisplay = groupGoodsForDisplay(goodsBySub);
+  const goodsRows = GOODS_DISPLAY_ORDER.filter(c=>goodsDisplay[c] && (goodsDisplay[c].qty || goodsDisplay[c].profit || goodsDisplay[c].sum))
+    .sort((a,b)=>goodsDisplay[b].profit-goodsDisplay[a].profit)
+    .map((c,idx)=>{
+      const t = goodsDisplay[c];
+      const mainRow = `<tr><td><span class="dot" style="background:${GOODS_SUBCAT_COLORS[c]}"></span>${c}${t._parts ? ` <button type="button" class="btn-link toggle-detail" style="padding:2px 0; font-size:11px;" data-target="${idPrefix}-charge-expand-${idx}">Подробнее ▾</button>` : ""}</td><td class="num">${fmt(t.profit)}</td><td class="num">${pctOf(t.profit, grandTotal.profit)}</td><td class="num">${fmtQtySum(t.qty, t.sum)}</td><td class="num">${pctOf(t.sum, grandTotal.sum)}</td></tr>`;
+      if (!t._parts) return mainRow;
+      const partRows = Object.entries(t._parts)
+        .filter(([,v])=>v.qty||v.profit||v.sum)
+        .sort((a,b)=>b[1].profit-a[1].profit)
+        .map(([name,v])=>`<tr><td style="padding-left:22px; color:var(--muted);">— ${name}</td><td class="num">${fmt(v.profit)}</td><td class="num">${pctOf(v.profit, grandTotal.profit)}</td><td class="num">${fmtQtySum(v.qty, v.sum)}</td><td class="num">${pctOf(v.sum, grandTotal.sum)}</td></tr>`).join("");
+      return mainRow + `<tr id="${idPrefix}-charge-expand-${idx}" style="display:none;"><td colspan=5 style="padding:0;"><table style="margin:0;">${partRows}</table></td></tr>`;
+    }).join("");
   return `
     <div class="grid2">
       <div>
@@ -1353,7 +1404,11 @@ function wireDetailToggle(scopeEl){
     btn.addEventListener("click", ()=>{
       const target = document.getElementById(btn.dataset.target);
       const willShow = target.style.display === "none";
-      target.style.display = willShow ? "block" : "none";
+      // target может быть как <tr> строки-разворота "Зарядки" (нужен display:"table-row",
+      // иначе display:"block" ломает табличную раскладку и "сдвигает" соседние таблицы), так
+      // и обычным <div> основной панели "Подробнее" сети/точки (там нужен display:"block").
+      const isRow = target.tagName === "TR";
+      target.style.display = willShow ? (isRow ? "table-row" : "block") : "none";
       btn.textContent = willShow ? "Скрыть ▴" : "Подробнее ▾";
     });
   });
@@ -1416,7 +1471,7 @@ function renderReport(rec){
   networkCard.querySelector("#net-summary-tbody").innerHTML = [
     ["Стекло", netGlassTotal], ["Чехлы", netCaseTotal], ["Товары", netGoodsTotal],
   ].map(([label, t])=>`<tr><td>${label}</td><td class="num">${fmt(t.profit)}</td><td class="num">${fmtQtySum(t.qty, t.sum)}</td><td class="num">${netGrandSum ? (t.sum/netGrandSum*100).toFixed(1) : "0.0"}%</td></tr>`).join("");
-  networkCard.querySelector("#net-detail").innerHTML = buildDetailPanelHtml(netGlassBySub, netGoodsBySub, {profit: netGrandProfit, qty: netGrandQty, sum: netGrandSum});
+  networkCard.querySelector("#net-detail").innerHTML = buildDetailPanelHtml(netGlassBySub, netGoodsBySub, {profit: netGrandProfit, qty: netGrandQty, sum: netGrandSum}, "net");
   wireDetailToggle(networkCard);
 
   reportCharts.push(makeCombinedNetChart("net-combined-chart", netGlassBySub, netCaseTotal, netGoodsBySub));
@@ -1458,7 +1513,7 @@ function renderReport(rec){
         </div>
         <div class="chart-wrap"><canvas id="${chartId}"></canvas></div>
       </div>
-      <div class="detail-panel" id="${detailId}" style="display:none;">${buildDetailPanelHtml(glassBySub, goodsBySub, {profit: grandProfit, qty: grandQty, sum: grandSum})}</div>
+      <div class="detail-panel" id="${detailId}" style="display:none;">${buildDetailPanelHtml(glassBySub, goodsBySub, {profit: grandProfit, qty: grandQty, sum: grandSum}, `point-${i}`)}</div>
       <div class="goods-section point-section">
         <h3 class="point-title">Товары (без стекла и чехлов) — лучшие по прибыли</h3>
         <div class="grid3">
@@ -1566,8 +1621,13 @@ function makeCombinedNetChart(canvasId, glassBySub, caseTotal, goodsBySub, showT
   });
   datasets.push({ label:"Чехлы (₸)", data:[0, caseTotal.profit, 0], backgroundColor:CASE_COLOR, stack:"profit", yAxisID:"y" });
   datasets.push({ label:"Чехлы (сумма)", data:[0, caseTotal.sum, 0], backgroundColor:CASE_COLOR, stack:"sum", yAxisID:"y1", qtyValues:[0, caseTotal.qty, 0] });
-  GOODS_SUBCATS.forEach(c=>{
-    const v = goodsBySub[c] || {qty:0,profit:0,sum:0};
+  // Товары — по ОТОБРАЖАЕМЫМ группам (groupGoodsForDisplay): USB/Зарядки/Адаптеры показаны
+  // на графике одним сегментом "Зарядки" (по указанию пользователя), разбивку на исходные
+  // три подкатегории можно посмотреть в таблице "Подробнее" под графиком (там же, где эта
+  // группировка тоже применена — buildDetailPanelHtml).
+  const goodsDisplay = groupGoodsForDisplay(goodsBySub);
+  GOODS_DISPLAY_ORDER.forEach(c=>{
+    const v = goodsDisplay[c] || {qty:0,profit:0,sum:0};
     datasets.push({ label:`${c} (₸)`, data:[0,0,v.profit], backgroundColor:GOODS_SUBCAT_COLORS[c], stack:"profit", yAxisID:"y" });
     datasets.push({ label:`${c} (сумма)`, data:[0,0,v.sum], backgroundColor:GOODS_SUBCAT_COLORS[c], stack:"sum", yAxisID:"y1", qtyValues:[0,0,v.qty] });
   });
@@ -1670,8 +1730,18 @@ async function exportReportExcel(){
     .forEach(c=>wsSummary.addRow([c, netGlassBySub[c].qty, netGlassBySub[c].profit]));
   wsSummary.addRow([]);
   wsSummary.addRow(["ТОВАРЫ ПО КАТЕГОРИЯМ"]); wsSummary.addRow(["Категория","Шт","Прибыль, ₸"]);
-  GOODS_SUBCATS.filter(c=>netGoodsBySub[c] && (netGoodsBySub[c].qty||netGoodsBySub[c].profit)).sort((a,b)=>netGoodsBySub[b].profit-netGoodsBySub[a].profit)
-    .forEach(c=>wsSummary.addRow([c, netGoodsBySub[c].qty, netGoodsBySub[c].profit]));
+  // Excel — статичный файл (без кнопок разворота, в отличие от сайта), поэтому объединённая
+  // группа "Зарядки" (USB+Зарядки+Адаптеры) сразу показывается вместе с тремя исходными
+  // подкатегориями с отступом строкой ниже — так видно и общую сумму, и разбивку.
+  {
+    const netGoodsDisplay = groupGoodsForDisplay(netGoodsBySub);
+    GOODS_DISPLAY_ORDER.filter(c=>netGoodsDisplay[c] && (netGoodsDisplay[c].qty||netGoodsDisplay[c].profit)).sort((a,b)=>netGoodsDisplay[b].profit-netGoodsDisplay[a].profit)
+      .forEach(c=>{
+        const t = netGoodsDisplay[c];
+        wsSummary.addRow([c, t.qty, t.profit]);
+        if (t._parts) Object.entries(t._parts).filter(([,v])=>v.qty||v.profit).sort((a,b)=>b[1].profit-a[1].profit).forEach(([name,v])=>wsSummary.addRow(["  — "+name, v.qty, v.profit]));
+      });
+  }
   // reportCharts[0] = совмещённый график прибыли и штук по сети
   addChartImageToSheet(wb, wsSummary, reportCharts[0], 4, 0);
 
@@ -1698,8 +1768,15 @@ async function exportReportExcel(){
       .forEach(c=>ws.addRow([c, glassBySub[c].qty, glassBySub[c].profit]));
     ws.addRow([]);
     ws.addRow(["ТОВАРЫ ПО КАТЕГОРИЯМ"]); ws.addRow(["Категория","Шт","Прибыль, ₸"]);
-    GOODS_SUBCATS.filter(c=>goodsBySub[c] && (goodsBySub[c].qty||goodsBySub[c].profit)).sort((a,b)=>goodsBySub[b].profit-goodsBySub[a].profit)
-      .forEach(c=>ws.addRow([c, goodsBySub[c].qty, goodsBySub[c].profit]));
+    {
+      const goodsDisplay = groupGoodsForDisplay(goodsBySub);
+      GOODS_DISPLAY_ORDER.filter(c=>goodsDisplay[c] && (goodsDisplay[c].qty||goodsDisplay[c].profit)).sort((a,b)=>goodsDisplay[b].profit-goodsDisplay[a].profit)
+        .forEach(c=>{
+          const t = goodsDisplay[c];
+          ws.addRow([c, t.qty, t.profit]);
+          if (t._parts) Object.entries(t._parts).filter(([,v])=>v.qty||v.profit).sort((a,b)=>b[1].profit-a[1].profit).forEach(([name,v])=>ws.addRow(["  — "+name, v.qty, v.profit]));
+        });
+    }
     ws.addRow([]);
     ws.addRow(["ТОВАРЫ — ТОП-5 ПО КОЛИЧЕСТВУ"]); ws.addRow(["#","Товар","Шт"]);
     top5Qty.forEach((r,idx)=>ws.addRow([idx+1, r.name, r.qty]));

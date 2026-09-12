@@ -619,12 +619,24 @@ function mapCatalogEntryToCategory(name, category, subcat){
   // а эти товары находятся по штрихкоду, поэтому до неё очередь не доходила). Обнаружено
   // пользователем: категория "Адаптеры" пропала из отчёта, т.к. её товары есть в справочнике.
   if (cat === "АДАПТЕР") return { cat: "ТОВАРЫ", goodsSub: "Адаптеры" };
-  // "9000" — отдельная подкатегория товаров сама по себе (по указанию пользователя), не
-  // разбирается больше по подкатегории справочника (Наушники/Адаптеры внутри "9000" раньше
-  // определяли итоговую подкатегорию — теперь неважно, что там в подкатегории, весь "9000"
-  // идёт в одну подкатегорию "9000", видимую везде наравне с Наушники/Зарядки/USB/
-  // Беспроводные наушники/Адаптеры).
-  if (cat === "9000") return { cat: "ТОВАРЫ", goodsSub: "9000" };
+  // "9000" — ОСНОВНАЯ категория верхнего уровня в справочнике (проверяем именно cat, а не
+  // sub — если у товара другая основная категория, а в подкатегории случайно записано слово
+  // "9000", это правило не должно срабатывать вообще, такой товар обрабатывается по своей
+  // обычной основной категории). По уточнённому указанию пользователя: внутри основной
+  // категории "9000" три конкретные подкатегории справочника (Адаптеры/Беспроводные наушники/
+  // Наушники) снова разбираются по отдельности — как было до предыдущего изменения — а любая
+  // другая подкатегория (пустая, незнакомая и т.д.) по-прежнему идёт в общую "9000".
+  // Сравнение регистронезависимое (subLower) — в реальном справочнике встретилось написание
+  // "Беспроводные Наушники" с большой "Н", из-за чего точное сравнение с маленькой буквой
+  // пропускало все 14 таких позиций, и они уходили в общую "9000" вместо разбивки (обнаружено
+  // пользователем: цифры по "9000"+"Беспроводные наушники" не поменялись после загрузки).
+  if (cat === "9000"){
+    const subLower = sub.toLowerCase();
+    if (subLower === "адаптеры") return { cat: "ТОВАРЫ", goodsSub: "Адаптеры" };
+    if (subLower === "беспроводные наушники") return { cat: "ТОВАРЫ", goodsSub: "Беспроводные наушники" };
+    if (subLower === "наушники") return { cat: "ТОВАРЫ", goodsSub: "Наушники" };
+    return { cat: "ТОВАРЫ", goodsSub: "9000" };
+  }
   return { cat: "ТОВАРЫ", goodsSub: "Другие" };
 }
 
@@ -633,10 +645,16 @@ function buildCatalogIndex(rows){
   const byName = new Map();
   for (const row of rows){
     const mapped = mapCatalogEntryToCategory(row.name, row.category, row.subcat);
+    // Наценка за единицу товара (Продажная цена − Закупочная цена), если справочник её
+    // содержит — используется только форматом "Отчёт продажи по продавцам", где в самом
+    // файле продаж нет готовой колонки "Прибыль" (см. parseSellerReportRows). Для всех
+    // остальных форматов отчётов unitProfit не нужен — там прибыль уже есть в файле продаж.
+    const hasPrices = row.sellPrice !== undefined && row.buyPrice !== undefined;
+    const withProfit = hasPrices ? { ...mapped, unitProfit: row.sellPrice - row.buyPrice } : mapped;
     const barcode = normalizeBarcode(row.barcode);
     const nameKey = normalizeItemName(row.name);
-    if (barcode) byBarcode.set(barcode, mapped);
-    if (nameKey) byName.set(nameKey, mapped);
+    if (barcode) byBarcode.set(barcode, withProfit);
+    if (nameKey) byName.set(nameKey, withProfit);
   }
   return { byBarcode, byName };
 }
@@ -651,6 +669,16 @@ function lookupCatalog(name, barcode){
   const bc = normalizeBarcode(barcode);
   if (bc && catalogByBarcode.has(bc)) return catalogByBarcode.get(bc);
   return null;
+}
+
+// Наценка за единицу (Продажная цена − Закупочная цена) для товара по штрихкоду — только
+// для формата "Отчёт продажи по продавцам" (parseSellerReportRows), где своей колонки
+// "Прибыль" в файле нет. Возвращает undefined, если товара нет в справочнике или справочник
+// не содержит цен (старый файл без колонок "Продажная цена"/"Закупочная цена").
+function lookupUnitProfit(barcode){
+  const bc = normalizeBarcode(barcode);
+  if (!bc || !catalogByBarcode.has(bc)) return undefined;
+  return catalogByBarcode.get(bc).unitProfit;
 }
 
 function classify(name, barcode, unitPrice){
@@ -788,11 +816,107 @@ function findTableLayout(rows){
   return null;
 }
 
+// Формат "Отчёт продажи по продавцам" (выгрузка кассы за 2026-09 — см. файл "Отчет продажи
+// по продавцам за ..."): в отличие от остальных форматов, здесь НЕТ одной строки на товар с
+// готовыми итогами "Кол-во"/"Прибыль" — вместо этого КАЖДАЯ строка это одна продажа одним
+// продавцом в конкретный день (колонки Магазин/Дата/Продавец/Наименование/Артикул/Баркод/
+// Категория/Кол-во проданных/Кол-во возвращенных/Продано за вычетом возвратов/Продажи без
+// учета скидки/Свободная цена/Оптовая цена). Прибыли в файле нет вообще — она считается по
+// справочнику товаров (Продажная цена − Закупочная цена) × кол-во, см. lookupUnitProfit.
+// Отличаем этот формат от остальных по характерному набору заголовков (Магазин+Продавец+
+// "продано за вычетом возвратов"), проверяем только первую строку — эта выгрузка всегда
+// начинается с шапки без служебных строк сверху.
+const SELLER_REPORT_HEADERS = {
+  store: ["магазин"],
+  name: ["наименование"],
+  barcode: ["баркод"],
+  // "Кол-во проданных" — ВАЛОВОЕ кол-во (до вычета возвратов), нужно вместе с "Продажи без
+  // учета скидки" (тоже валовая сумма) только чтобы вычислить цену за единицу и по ней
+  // пересчитать сумму на ЧИСТОЕ кол-во — см. комментарий в parseSellerReportRows ниже.
+  qtyGross: ["кол-во проданных"],
+  qtyNet: ["продано за вычетом возвратов"],
+  sumGross: ["продажи без учета скидки"],
+};
+function findSellerReportLayout(rows){
+  const row = rows[0];
+  if (!row) return null;
+  let storeCol=-1, nameCol=-1, barcodeCol=-1, qtyGrossCol=-1, qtyCol=-1, sumCol=-1;
+  for (let c = 0; c < row.length; c++){
+    const cell = row[c];
+    if (typeof cell !== "string") continue;
+    const v = cell.trim().toLowerCase();
+    if (storeCol===-1 && SELLER_REPORT_HEADERS.store.includes(v)) storeCol = c;
+    if (nameCol===-1 && SELLER_REPORT_HEADERS.name.includes(v)) nameCol = c;
+    if (barcodeCol===-1 && SELLER_REPORT_HEADERS.barcode.includes(v)) barcodeCol = c;
+    if (qtyGrossCol===-1 && SELLER_REPORT_HEADERS.qtyGross.includes(v)) qtyGrossCol = c;
+    if (qtyCol===-1 && SELLER_REPORT_HEADERS.qtyNet.includes(v)) qtyCol = c;
+    if (sumCol===-1 && SELLER_REPORT_HEADERS.sumGross.includes(v)) sumCol = c;
+  }
+  if (storeCol===-1 || nameCol===-1 || qtyCol===-1 || sumCol===-1) return null;
+  return { headerRow: 0, storeCol, nameCol, barcodeCol, qtyGrossCol, qtyCol, sumCol };
+}
+
+// Построчные продажи (одна строка = одна продажа одним продавцом) сворачиваются в одну
+// запись на товар (по штрихкоду, если он есть, иначе по названию) — так же, как остальные
+// форматы отдают уже готовую агрегированную строку на товар. Возвращает {items, store}, где
+// store — значение колонки "Магазин" первой строки (для проверки, что в файле один магазин).
+function parseSellerReportRows(allRows, layout){
+  const byKey = new Map(); // key -> {name, barcode, qty, sum}
+  let store = null;
+  for (let r = layout.headerRow + 1; r < allRows.length; r++){
+    const row = allRows[r];
+    if (!row) continue;
+    const name = row[layout.nameCol];
+    if (!name || typeof name !== "string") continue;
+    if (isExcludedItem(name)) continue;
+    if (store === null && row[layout.storeCol]) store = String(row[layout.storeCol]).trim();
+    const barcode = layout.barcodeCol !== -1 ? normalizeBarcode(row[layout.barcodeCol]) : "";
+    const qty = toNum(row[layout.qtyCol]);
+    // "Продажи без учета скидки" — ВАЛОВАЯ сумма (кол-во ДО вычета возвратов × цена), а не
+    // чистая. Если строку что-то вернули (qty проданных > qty за вычетом возвратов), валовая
+    // сумма не уменьшается вместе с кол-вом — обнаружено на примере "USB TS-141 C/C" (продано
+    // 1, возврат 1, чистое кол-во 0, но "Продажи без учета скидки" всё равно 1800, а не 0).
+    // Пересчитываем сумму на чистое кол-во через цену за единицу (валовая сумма / валовое
+    // кол-во), чтобы сумма товара корректно шла к нулю вместе с полностью возвращённым кол-вом.
+    const sumGross = toNum(row[layout.sumCol]);
+    const qtyGross = layout.qtyGrossCol !== -1 ? toNum(row[layout.qtyGrossCol]) : qty;
+    const rowUnitPrice = qtyGross ? sumGross / qtyGross : 0;
+    const sum = Math.round(rowUnitPrice * qty);
+    if (qty === 0 && sum === 0) continue;
+    const key = barcode || ("n:" + normalizeItemName(name));
+    if (!byKey.has(key)) byKey.set(key, {name: name.trim(), barcode, qty: 0, sum: 0});
+    const acc = byKey.get(key);
+    acc.qty += qty;
+    acc.sum += sum;
+  }
+  const items = [];
+  for (const {name, barcode, qty, sum} of byKey.values()){
+    const unitProfit = lookupUnitProfit(barcode);
+    // Если товара нет в справочнике цен — прибыль посчитать не из чего, считаем её 0 (не
+    // пропускаем сам товар — кол-во/сумма всё равно валидны и должны попасть в отчёт).
+    const profit = unitProfit !== undefined ? Math.round(unitProfit * qty) : 0;
+    const unitPrice = qty ? Math.round(sum / qty) : undefined;
+    items.push({name, qty, sum, profit, barcode, cat: classify(name, barcode, unitPrice)});
+  }
+  return { items, store };
+}
+
 async function parseXlsxFile(file){
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, {type:"array"});
   const ws = wb.Sheets["Sheet1"] || wb.Sheets["data"] || wb.Sheets[wb.SheetNames[0]];
   const allRows = XLSX.utils.sheet_to_json(ws, {header:1, range:0, defval:null});
+  const sellerLayout = findSellerReportLayout(allRows);
+  if (sellerLayout){
+    const { items, store } = parseSellerReportRows(allRows, sellerLayout);
+    const periodMonth = extractPeriodMonth(allRows);
+    // Имя файла этого формата ("Отчет продажи по продавцам за ...") не содержит название
+    // точки — detectPoint(имя файла) в addFiles() тут ничего не найдёт, поэтому дополнительно
+    // возвращаем точку, определённую по колонке "Магазин" внутри самого файла (например
+    // "TopGlass Вокзал" содержит токен "ВОКЗ"), чтобы addFiles могла подставить её сама.
+    const detectedPoint = store ? detectPoint(store) : null;
+    return { items, periodMonth, detectedPoint };
+  }
   const layout = findTableLayout(allRows);
   if (!layout){
     throw new Error("Не удалось распознать структуру файла — не найдены колонки «Товар», «Кол-во» и «Прибыль»");
@@ -1078,6 +1202,12 @@ function updateCatalogSummary(rowCount){
 
 // Парсит xlsx-справочник (лист "data", колонки: Название товара, Категория, Подкатеогрия,
 // Штрихкод — как в файле Наименование-Категория.xlsx) в массив {name, category, subcat, barcode}.
+// С сентября 2026 справочник дополнительно содержит "Продажная цена" и "Закупочная цена"
+// (цена за единицу товара) — если эти колонки есть, читаем их тоже (sellPrice/buyPrice), это
+// нужно для расчёта прибыли в формате "Отчёт продажи по продавцам" (см. parseSellerReportRows),
+// где готовой колонки "Прибыль" нет в принципе, только кол-во и сумма продаж. Колонки не
+// обязательны — старые файлы справочника без цен по-прежнему читаются нормально (sellPrice/
+// buyPrice будут undefined).
 async function parseCatalogXlsxFile(file){
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, {type:"array"});
@@ -1091,6 +1221,8 @@ async function parseCatalogXlsxFile(file){
   const catCol = header.findIndex(v => v === "категория" || v.includes("категория") && !v.includes("под"));
   const subcatCol = header.findIndex(v => v.includes("подкат"));
   const barcodeCol = header.findIndex(v => v.includes("штрихкод") && !v.includes("доп"));
+  const sellPriceCol = header.findIndex(v => v.includes("продажная цена"));
+  const buyPriceCol = header.findIndex(v => v.includes("закупочная цена"));
   if (nameCol === -1 || catCol === -1){
     throw new Error("Не удалось распознать структуру файла — не найдены колонки «Название товара» и «Категория»");
   }
@@ -1105,6 +1237,8 @@ async function parseCatalogXlsxFile(file){
       category: catCol !== -1 ? (row[catCol] || "") : "",
       subcat: subcatCol !== -1 ? (row[subcatCol] || "") : "",
       barcode: barcodeCol !== -1 ? normalizeBarcode(row[barcodeCol]) : "",
+      sellPrice: sellPriceCol !== -1 ? toNum(row[sellPriceCol]) : undefined,
+      buyPrice: buyPriceCol !== -1 ? toNum(row[buyPriceCol]) : undefined,
     });
   }
   return rows;
@@ -1174,6 +1308,10 @@ async function addFiles(files){
       const parsed = await parseXlsxFile(entry.file);
       entry.items = parsed.items;
       entry.detectedMonth = parsed.periodMonth || detectMonthFromFilename(entry.file.name);
+      // Точка по имени файла не определилась (формат "Отчёт продажи по продавцам" не содержит
+      // названия точки в имени) — пробуем точку, которую parseXlsxFile определил по колонке
+      // "Магазин" внутри самого файла (см. detectedPoint в parseSellerReportRows-ветке).
+      if (!entry.point && parsed.detectedPoint) entry.point = parsed.detectedPoint;
       entry.status = "pending";
     }catch(e){
       entry.status = "err";
